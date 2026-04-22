@@ -16,7 +16,7 @@ no runtime dependency on it.
 | ----- | ------------------------------------------------------------------------- | ------------- |
 | 1     | Data layer + Sosnoff (Tastytrade) module + single Trade Card in React UI  | **shipped**   |
 | 2     | Thorp (quant edge) + Saliba (defined-risk) + unified side-by-side card    | **shipped**   |
-| 3     | High-volume + 0DTE modules with their own guardrails                      | not started   |
+| 3     | High-volume + 0DTE modules with their own guardrails                      | **shipped**   |
 | 4     | Backtest harness                                                          | not started   |
 | 5     | Trade journal + analytics + risk-dashboard polish                         | not started   |
 
@@ -28,7 +28,9 @@ options-tool/
 │   └── app/
 │       ├── core/         # pydantic models + BSM pricing + vol-surface fit
 │       ├── data/         # DataProvider protocol + Mock / YFinance / Polygon
-│       ├── strategists/  # Sosnoff, Thorp, Saliba (share the Strategist proto)
+│       ├── risk/         # RiskGuard service (caps + session circuit breaker)
+│       ├── journal/      # TradeJournal (SQLite) + analytics
+│       ├── strategists/  # Sosnoff, Thorp, Saliba, HighVolume, ZeroDTE
 │       ├── api/          # FastAPI routes + DI
 │       ├── portfolio.py  # Greeks aggregator
 │       └── main.py       # uvicorn entrypoint
@@ -78,6 +80,35 @@ npm run dev        # http://localhost:5173 (proxies /api to :8001)
 Type-check: `npm run build`. Lint: `npm run lint`.
 
 ## Methodology citations
+
+### High-volume / "Elite Options Trader" (Phase 3)
+
+This module is a **volume-and-journaling wrapper**, not an endorsement of
+stop-less trading. Design intent:
+
+- Wide (~0.08-delta) short strangles sold for premium.
+- `RiskGuard` enforces: per-ticker contract cap, daily realized-loss cap,
+  weekly realized-loss cap. Any breach → setup returns `skip`.
+- Scale-in on losing positions is *permitted by the manage() rules*, but only
+  up to the per-ticker cap and only when the guard approves the additional
+  contracts.
+- `max_theoretical_loss` is always surfaced at entry because there is no
+  hard stop — that's the module's explicit departure from stop-based discipline.
+- Every action includes a journaling hint so `Kelly-implied` vs `actual` size
+  shows up in the analytics panel.
+
+### 0DTE / Sang-Lucci-style intraday (Phase 3)
+
+- Universe restricted to SPY / SPX / QQQ / SPXW / XSP.
+- Signal score is the sum of three votes:
+  1. **ORB** — close beyond first 30-minute range.
+  2. **VWAP** — relationship of current price to session VWAP.
+  3. **Dealer-gamma proxy** — intraday realized-vol differential (rough SVI
+     shortcut for real GEX, which requires paid data).
+- Every returned setup carries a **mandatory hard stop-loss**, overriding the
+  high-volume module's no-stop behavior.
+- `RiskGuard` in `session_only=True` mode halts new entries after N
+  consecutive losses or once session drawdown exceeds a % of cash.
 
 ### Thorp — quantitative edge (Phase 2)
 
@@ -149,6 +180,29 @@ cost, rate limits, and notes on when each is appropriate.
 - [x] 26 pytest cases (domain models, providers, IVR/IVP math, picker, sizing,
       management, API smoke)
 - [x] README with architecture, run instructions, and methodology citations
+
+## Definition of done (Phase 3)
+
+- [x] `app.risk.RiskGuard` — per-ticker contract cap, daily + weekly realized-loss
+      caps, plus `session_only` mode for the 0DTE circuit breaker
+      (N-consecutive losses and drawdown %)
+- [x] `app.journal.TradeJournal` — SQLite-backed paper-fill ledger
+      (record, close, list, export) keyed on ticker/strategist/opened_at
+- [x] `app.journal.compute_analytics` — win rate, avg winner/loser,
+      profit factor, expectancy, R-multiple distribution, Kelly-implied vs
+      actual drift, per-strategist breakdown
+- [x] `HighVolumeStrategist` — wide ~8-delta strangle, enforces caps via
+      `RiskGuard`, always surfaces `max_theoretical_loss`, scale-in in
+      `manage()` only inside the per-ticker cap
+- [x] `ZeroDTEStrategist` — SPY/SPX/QQQ only, ORB + VWAP + GEX-proxy signal
+      scoring, **mandatory** `stop_loss` on every setup, session circuit
+      breaker halts new entries
+- [x] `/api/unified-analyze` runs all five strategists side-by-side
+- [x] `/api/journal/{entries,close,analytics}` and `/api/risk/check` endpoints
+- [x] `/api/zero-dte/signals/{ticker}` exposes the session signal log
+- [x] React `JournalPanel` (analytics + Kelly-drift chips + recent fills) and
+      `ZeroDTEPanel` (session signal + vote chips). Tabs on the main app.
+- [x] 74 pytest cases; `mypy --strict` clean across 28 source files
 
 ## Definition of done (Phase 2)
 

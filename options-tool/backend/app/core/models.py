@@ -84,6 +84,14 @@ class TradeLeg(BaseModel):
         return self.quantity > 0
 
 
+class StopLoss(BaseModel):
+    """An explicit hard stop. Required for Phase-3 0DTE entries."""
+
+    price_trigger: float | None = Field(default=None, gt=0, description="Underlying level that triggers the stop.")
+    dollar_loss: float = Field(gt=0, description="Dollar loss at which the trade must be closed.")
+    kind: Literal["underlying_level", "dollar_loss"] = "dollar_loss"
+
+
 class TradeSetup(BaseModel):
     """A fully-specified multi-leg idea ready for sizing and review."""
 
@@ -94,12 +102,20 @@ class TradeSetup(BaseModel):
     net_credit: float
     max_profit: float
     max_loss: float
+    max_theoretical_loss: float | None = Field(
+        default=None,
+        description=(
+            "Ceiling on catastrophic loss for undefined-risk structures. "
+            "The high-volume module requires this to be surfaced on entry."
+        ),
+    )
     breakevens: list[float]
     pop: float | None = Field(default=None, ge=0, le=1)
     expected_value: float | None = None
     iv_rank: float | None = Field(default=None, ge=0, le=100)
     iv_percentile: float | None = Field(default=None, ge=0, le=100)
     dte: int = Field(ge=0)
+    stop_loss: StopLoss | None = None
     notes: list[str] = Field(default_factory=list)
 
     @property
@@ -165,6 +181,52 @@ class Candidate(BaseModel):
     ticker: str
     reason: str
     score: float = 0.0
+
+
+class JournalOutcome(str, Enum):
+    OPEN = "open"
+    WIN = "win"
+    LOSS = "loss"
+    SCRATCH = "scratch"
+
+
+class JournalEntry(BaseModel):
+    """One paper-trade record. Source of truth for Phase-3 analytics."""
+
+    id: int | None = None
+    ticker: str
+    strategy: str
+    strategist: str
+    thesis: str
+    opened_at: datetime
+    closed_at: datetime | None = None
+    contracts: int = Field(ge=0)
+    entry_credit: float = Field(description="Net credit (+) or debit (−) per spread at entry.")
+    exit_credit: float | None = Field(
+        default=None,
+        description="Net credit/debit per spread at exit. None while open.",
+    )
+    max_loss: float = Field(ge=0, description="Defined-risk max loss per spread at entry.")
+    outcome: JournalOutcome = JournalOutcome.OPEN
+    realized_pnl: float = 0.0
+    planned_size_contracts: int | None = Field(
+        default=None,
+        description="Kelly-implied size at entry — analytics compares this against actual.",
+    )
+    notes: str = ""
+
+    @property
+    def r_multiple(self) -> float | None:
+        """Realised P/L expressed as a multiple of initial risk per spread.
+
+        Risk = max_loss × contracts × 100. Returns None while the trade is open.
+        """
+        if self.outcome is JournalOutcome.OPEN:
+            return None
+        risk_dollars = self.max_loss * self.contracts * CONTRACT_MULTIPLIER
+        if risk_dollars <= 0:
+            return None
+        return self.realized_pnl / risk_dollars
 
 
 TradeSide = Literal["long", "short", "neutral", "directional_bullish", "directional_bearish"]

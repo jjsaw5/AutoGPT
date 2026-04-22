@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 
 from app.core.models import OptionChain
-from app.data.base import DataProvider, IVHistoryPoint, PriceBar
+from app.data.base import DataProvider, IntradayBar, IVHistoryPoint, PriceBar
 
 
 class PolygonProvider:
@@ -33,6 +33,11 @@ class PolygonProvider:
 
     def get_iv_history(self, ticker: str, lookback_days: int = 252) -> list[IVHistoryPoint]:
         raise NotImplementedError("PolygonProvider.get_iv_history is a Phase 2 deliverable")
+
+    def get_intraday_bars(
+        self, ticker: str, session_date: date, interval_minutes: int = 1
+    ) -> list[IntradayBar]:
+        raise NotImplementedError("PolygonProvider.get_intraday_bars is a Phase 3 deliverable")
 
 
 _: DataProvider = PolygonProvider.__new__(PolygonProvider)

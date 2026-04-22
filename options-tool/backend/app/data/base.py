@@ -18,6 +18,17 @@ class PriceBar(BaseModel):
     volume: int
 
 
+class IntradayBar(BaseModel):
+    """One-minute (or other interval) bar used by the 0DTE module."""
+
+    timestamp: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+
 class IVHistoryPoint(BaseModel):
     date: date
     atm_iv: float = Field(ge=0, description="Annualised at-the-money implied volatility.")
@@ -44,6 +55,12 @@ class DataProvider(Protocol):
 
     def get_iv_history(self, ticker: str, lookback_days: int = 252) -> list[IVHistoryPoint]:
         """Return daily ATM IV history used to compute IV Rank / IV Percentile."""
+        ...
+
+    def get_intraday_bars(
+        self, ticker: str, session_date: date, interval_minutes: int = 1
+    ) -> list[IntradayBar]:
+        """Return regular-session intraday bars for ``session_date``. Used by 0DTE."""
         ...
 
     def now(self) -> datetime:

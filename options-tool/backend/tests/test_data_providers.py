@@ -20,9 +20,12 @@ def test_mock_provider_chain_has_both_rights_and_realistic_deltas(mock_provider:
     calls = [c for c in chain.contracts if c.right.value == "C"]
     puts = [c for c in chain.contracts if c.right.value == "P"]
     assert calls and puts
-    # ATM call delta should be near 0.5, not negative; ATM put near -0.5.
-    atm_call = min(calls, key=lambda c: abs(c.strike - chain.spot))
-    atm_put = min(puts, key=lambda c: abs(c.strike - chain.spot))
+    # Skip the 0-DTE row — intrinsic-only deltas are binary there.
+    today = mock_provider.now().date()
+    future_calls = [c for c in calls if c.expiry > today]
+    future_puts = [p for p in puts if p.expiry > today]
+    atm_call = min(future_calls, key=lambda c: abs(c.strike - chain.spot))
+    atm_put = min(future_puts, key=lambda c: abs(c.strike - chain.spot))
     assert atm_call.delta is not None and 0.3 < atm_call.delta < 0.7
     assert atm_put.delta is not None and -0.7 < atm_put.delta < -0.3
 
@@ -30,7 +33,8 @@ def test_mock_provider_chain_has_both_rights_and_realistic_deltas(mock_provider:
 def test_mock_provider_chain_has_expected_expiries(mock_provider: MockProvider) -> None:
     chain = mock_provider.get_chain("TEST")
     dtes = sorted((e - mock_provider.now().date()).days for e in chain.expiries())
-    assert dtes == [7, 30, 45, 60, 90]
+    # Phase 3 added a same-day expiry so the 0DTE module can exercise the mock.
+    assert dtes == [0, 7, 30, 45, 60, 90]
 
 
 def test_mock_provider_iv_history_length_and_shape(mock_provider: MockProvider) -> None:

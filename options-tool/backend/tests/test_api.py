@@ -38,15 +38,14 @@ def test_analyze_returns_setup_for_default_mock() -> None:
     assert body["setup"]["strategy"] in {"iron_condor", "skip"}
 
 
-def test_unified_analyze_returns_all_three_strategists() -> None:
+def test_unified_analyze_returns_all_five_strategists() -> None:
     reset_provider_cache()
     client = TestClient(app)
     resp = client.post("/api/unified-analyze", json={"ticker": "SPY", "bias": "neutral"})
     assert resp.status_code == 200
     body = resp.json()
     names = {r["name"] for r in body["results"]}
-    assert names == {"sosnoff", "thorp", "saliba"}
-    # Every result must carry a headline string for the UI.
+    assert names == {"sosnoff", "thorp", "saliba", "high_volume", "zero_dte"}
     for r in body["results"]:
         assert r["headline"]
     assert "Educational" in body["banner"]

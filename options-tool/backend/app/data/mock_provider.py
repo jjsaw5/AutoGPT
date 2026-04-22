@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 from app.core.bsm import delta as bsm_delta
 from app.core.bsm import price as bsm_price
 from app.core.models import OptionChain, OptionContract, OptionRight
-from app.data.base import DataProvider, IVHistoryPoint, PriceBar
+from app.data.base import DataProvider, IntradayBar, IVHistoryPoint, PriceBar
 
 
 class MockProvider:
@@ -40,7 +40,7 @@ class MockProvider:
         spot = self._spot
         r = 0.045
         today = self._as_of.date()
-        expiries = [today + timedelta(days=d) for d in (7, 30, 45, 60, 90)]
+        expiries = [today + timedelta(days=d) for d in (0, 7, 30, 45, 60, 90)]
         if expiry is not None:
             expiries = [expiry] if expiry in expiries else [expiry]
 
@@ -100,6 +100,43 @@ class MockProvider:
                     low=close - 1.0,
                     close=close,
                     volume=1_000_000,
+                )
+            )
+        return bars
+
+    def get_intraday_bars(
+        self, ticker: str, session_date: date, interval_minutes: int = 1
+    ) -> list[IntradayBar]:
+        """Synthesise a US equity session (09:30–16:00 ET → 13:30–20:00 UTC).
+
+        Shape: opening 30-min range wider than body, a directional trend, and
+        enough noise that the ORB signal can fire deterministically in tests.
+        """
+        if interval_minutes <= 0:
+            interval_minutes = 1
+        open_ts = datetime.combine(
+            session_date,
+            datetime.min.time().replace(hour=13, minute=30),
+            tzinfo=timezone.utc,
+        )
+        minutes_per_session = 390
+        bars: list[IntradayBar] = []
+        price = self._spot
+        # Inject an upward breakout at bar 40 so tests can assert the ORB fires.
+        for i in range(0, minutes_per_session, interval_minutes):
+            ts = open_ts + timedelta(minutes=i)
+            wobble = math.sin(i / 15.0) * 0.15
+            trend = 0.01 * (i - 60) if i > 60 else 0.0
+            close = price + wobble + trend
+            bar_range = 0.4 if i < 30 else 0.2
+            bars.append(
+                IntradayBar(
+                    timestamp=ts,
+                    open=round(close - bar_range / 2, 3),
+                    high=round(close + bar_range, 3),
+                    low=round(close - bar_range, 3),
+                    close=round(close, 3),
+                    volume=5000 - i * 5,
                 )
             )
         return bars

@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from app.core.models import OptionChain, OptionContract, OptionRight
-from app.data.base import DataProvider, IVHistoryPoint, PriceBar
+from app.data.base import DataProvider, IntradayBar, IVHistoryPoint, PriceBar
 from app.data.cache import ChainCache
 
 
@@ -107,6 +107,33 @@ class YFinanceProvider:
         self._cache.set(
             self.name, "history", ticker, [b.model_dump(mode="json") for b in bars], str(lookback_days)
         )
+        return bars
+
+    def get_intraday_bars(
+        self, ticker: str, session_date: date, interval_minutes: int = 1
+    ) -> list[IntradayBar]:
+        """yfinance exposes intraday bars via ``history(interval=...)`` but the
+        lookback window on free tiers is 7 days. Anything older returns empty.
+        """
+        interval = f"{interval_minutes}m"
+        df: pd.DataFrame = self._yf.Ticker(ticker).history(
+            start=session_date.isoformat(),
+            end=(session_date.fromordinal(session_date.toordinal() + 1)).isoformat(),
+            interval=interval,
+        )
+        bars: list[IntradayBar] = []
+        for idx, row in df.iterrows():
+            ts = idx.to_pydatetime() if hasattr(idx, "to_pydatetime") else idx
+            bars.append(
+                IntradayBar(
+                    timestamp=ts,
+                    open=float(row["Open"]),
+                    high=float(row["High"]),
+                    low=float(row["Low"]),
+                    close=float(row["Close"]),
+                    volume=int(row["Volume"]),
+                )
+            )
         return bars
 
     def get_iv_history(self, ticker: str, lookback_days: int = 252) -> list[IVHistoryPoint]:

@@ -7,6 +7,8 @@ const STRATEGIST_LABELS: Record<string, string> = {
   sosnoff: "Sosnoff · premium selling",
   thorp: "Thorp · quant edge",
   saliba: "Saliba · defined risk",
+  high_volume: "High-volume · wide short strangle",
+  zero_dte: "0DTE · intraday signal + hard stop",
 };
 
 function Verdict({ value }: { value: StrategistResult["verdict"] }) {

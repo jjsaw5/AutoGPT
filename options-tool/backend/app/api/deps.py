@@ -11,6 +11,14 @@ from functools import lru_cache
 from app.data.base import DataProvider
 from app.data.cache import ChainCache
 from app.data.mock_provider import MockProvider
+from app.journal.store import TradeJournal
+
+
+@lru_cache(maxsize=1)
+def get_journal() -> TradeJournal:
+    """Process-wide singleton journal. Path comes from env; defaults in-memory."""
+    path = os.environ.get("OPTIONS_TOOL_JOURNAL_DB", ":memory:")
+    return TradeJournal(path=path)
 
 
 @lru_cache(maxsize=1)
@@ -33,3 +41,4 @@ def get_provider() -> DataProvider:
 def reset_provider_cache() -> None:
     """Test helper — drop the lru_cache so providers pick up env changes."""
     get_provider.cache_clear()
+    get_journal.cache_clear()

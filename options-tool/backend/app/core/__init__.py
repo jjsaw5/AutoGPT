@@ -3,6 +3,8 @@
 from app.core.models import (
     Account,
     Candidate,
+    JournalEntry,
+    JournalOutcome,
     ManagementAction,
     ManagementVerdict,
     MarketSnapshot,
@@ -11,6 +13,7 @@ from app.core.models import (
     OptionRight,
     Position,
     PositionSize,
+    StopLoss,
     TradeLeg,
     TradeSetup,
 )
@@ -18,6 +21,8 @@ from app.core.models import (
 __all__ = [
     "Account",
     "Candidate",
+    "JournalEntry",
+    "JournalOutcome",
     "ManagementAction",
     "ManagementVerdict",
     "MarketSnapshot",
@@ -26,6 +31,7 @@ __all__ = [
     "OptionRight",
     "Position",
     "PositionSize",
+    "StopLoss",
     "TradeLeg",
     "TradeSetup",
 ]
