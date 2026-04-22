@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-from app.core.models import JournalEntry, JournalOutcome
+from app.core.models import JournalEntry, JournalOutcome, TradeSetup
 
 
 _SCHEMA = """
@@ -31,13 +31,22 @@ CREATE TABLE IF NOT EXISTS journal_entries (
     outcome TEXT NOT NULL,
     realized_pnl REAL NOT NULL DEFAULT 0,
     planned_size_contracts INTEGER,
-    notes TEXT NOT NULL DEFAULT ''
+    notes TEXT NOT NULL DEFAULT '',
+    setup_snapshot TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_journal_ticker ON journal_entries(ticker);
 CREATE INDEX IF NOT EXISTS idx_journal_opened ON journal_entries(opened_at);
 CREATE INDEX IF NOT EXISTS idx_journal_outcome ON journal_entries(outcome);
 """
+
+
+def _ensure_columns(conn: sqlite3.Connection) -> None:
+    """Additive migration: add ``setup_snapshot`` to pre-Phase-5 databases."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(journal_entries)")}
+    if "setup_snapshot" not in cols:
+        conn.execute("ALTER TABLE journal_entries ADD COLUMN setup_snapshot TEXT")
+        conn.commit()
 
 
 class TradeJournal:
@@ -48,17 +57,22 @@ class TradeJournal:
         self._conn = sqlite3.connect(self._path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
+        _ensure_columns(self._conn)
 
     # ------------------------------------------------------------------ CRUD
     def record(self, entry: JournalEntry) -> JournalEntry:
+        snapshot_json = (
+            entry.setup_snapshot.model_dump_json() if entry.setup_snapshot is not None else None
+        )
         cur = self._conn.execute(
             """
             INSERT INTO journal_entries (
                 ticker, strategy, strategist, thesis,
                 opened_at, closed_at, contracts,
                 entry_credit, exit_credit, max_loss,
-                outcome, realized_pnl, planned_size_contracts, notes
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                outcome, realized_pnl, planned_size_contracts, notes,
+                setup_snapshot
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 entry.ticker.upper(),
@@ -75,6 +89,7 @@ class TradeJournal:
                 entry.realized_pnl,
                 entry.planned_size_contracts,
                 entry.notes,
+                snapshot_json,
             ),
         )
         self._conn.commit()
@@ -161,6 +176,8 @@ def _str_to_dt(s: str) -> datetime:
 
 
 def _row_to_entry(row: sqlite3.Row) -> JournalEntry:
+    snapshot_raw = _row_value(row, "setup_snapshot")
+    snapshot = TradeSetup.model_validate_json(snapshot_raw) if snapshot_raw else None
     return JournalEntry(
         id=row["id"],
         ticker=row["ticker"],
@@ -177,4 +194,14 @@ def _row_to_entry(row: sqlite3.Row) -> JournalEntry:
         realized_pnl=row["realized_pnl"],
         planned_size_contracts=row["planned_size_contracts"],
         notes=row["notes"] or "",
+        setup_snapshot=snapshot,
     )
+
+
+def _row_value(row: sqlite3.Row, key: str) -> str | None:
+    """sqlite3.Row raises IndexError on unknown keys — tolerate missing columns."""
+    try:
+        value = row[key]
+    except (IndexError, KeyError):
+        return None
+    return str(value) if value is not None else None

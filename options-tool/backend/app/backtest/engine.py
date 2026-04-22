@@ -182,6 +182,7 @@ class Backtester:
                             max_loss=setup.max_loss,
                             planned_size_contracts=sized.contracts,
                             outcome=JournalOutcome.OPEN,
+                            setup_snapshot=setup,
                         )
                     )
 

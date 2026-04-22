@@ -214,6 +214,13 @@ class JournalEntry(BaseModel):
         description="Kelly-implied size at entry — analytics compares this against actual.",
     )
     notes: str = ""
+    setup_snapshot: TradeSetup | None = Field(
+        default=None,
+        description=(
+            "Frozen TradeSetup at entry. Persisted as JSON by TradeJournal so the "
+            "Phase-5 risk dashboard can recompute Greeks and exposures on open positions."
+        ),
+    )
 
     @property
     def r_multiple(self) -> float | None:

@@ -38,6 +38,47 @@ def test_analyze_returns_setup_for_default_mock() -> None:
     assert body["setup"]["strategy"] in {"iron_condor", "skip"}
 
 
+def test_risk_dashboard_empty_by_default() -> None:
+    reset_provider_cache()
+    client = TestClient(app)
+    resp = client.post(
+        "/api/risk/dashboard",
+        json={
+            "account": {
+                "cash": 100_000,
+                "kelly_fraction": 0.25,
+                "max_pct_per_trade": 0.05,
+                "max_total_deployed_pct": 0.5,
+            }
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["open_positions"] == 0
+    assert body["greeks"]["delta"] == 0.0
+
+
+def test_bankroll_status_returns_default_budgets() -> None:
+    reset_provider_cache()
+    client = TestClient(app)
+    resp = client.post(
+        "/api/bankroll/status",
+        json={
+            "account": {
+                "cash": 100_000,
+                "kelly_fraction": 0.25,
+                "max_pct_per_trade": 0.05,
+                "max_total_deployed_pct": 0.5,
+            }
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    names = {a["name"] for a in body["allocations"]}
+    assert names == {"sosnoff", "saliba", "thorp", "high_volume", "zero_dte"}
+    assert body["total_cap"] == 50_000  # 50% of $100k
+
+
 def test_backtest_run_returns_metrics_and_equity_curve() -> None:
     reset_provider_cache()
     client = TestClient(app)

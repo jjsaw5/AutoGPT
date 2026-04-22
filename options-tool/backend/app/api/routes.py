@@ -19,6 +19,11 @@ Phase 3:
 
 Phase 4:
 - ``POST /api/backtest/run`` — replay a strategist over a synthetic date range
+
+Phase 5:
+- ``POST /api/risk/dashboard`` — aggregated Greeks + exposure + warnings on
+  open journal entries (requires the entries to carry a setup snapshot)
+- ``POST /api/bankroll/status`` — deployed vs. per-strategist caps
 """
 from __future__ import annotations
 
@@ -31,6 +36,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import get_journal, get_provider
 from app.backtest.engine import Backtester, BacktestResult
+from app.bankroll.manager import BankrollStatus, compute_bankroll, default_budgets
 from app.core.models import (
     Account,
     JournalEntry,
@@ -43,6 +49,7 @@ from app.data.base import DataProvider
 from app.data.mock_provider import MockProvider
 from app.journal.analytics import compute_analytics
 from app.journal.store import TradeJournal
+from app.risk.dashboard import DashboardConfig, compute_dashboard
 from app.risk.guard import RiskCaps, RiskGuard
 from app.strategists.high_volume import HighVolumeStrategist
 from app.strategists.saliba import SalibaStrategist
@@ -509,3 +516,81 @@ def zero_dte_signals(
         would_trade=would_trade,
         notes=notes,
     )
+
+
+# ------------------------------------------------------------ Risk Dashboard
+class DashboardRequest(BaseModel):
+    account: Account
+    ticker_concentration_pct: float = Field(default=0.25, ge=0, le=1)
+    strategist_concentration_pct: float = Field(default=0.40, ge=0, le=1)
+    max_theoretical_loss_pct: float = Field(default=0.50, ge=0, le=1)
+
+
+class DashboardResponse(BaseModel):
+    open_positions: int
+    total_contracts: int
+    total_capital_at_risk: float
+    total_max_theoretical_loss: float
+    greeks: dict[str, float | int]
+    by_ticker: list[dict[str, object]]
+    by_strategist: list[dict[str, object]]
+    warnings: list[dict[str, str]]
+
+
+@router.post("/risk/dashboard", response_model=DashboardResponse)
+def risk_dashboard(
+    req: DashboardRequest,
+    journal: TradeJournal = Depends(get_journal),
+) -> DashboardResponse:
+    cfg = DashboardConfig(
+        concentration_ticker_pct=req.ticker_concentration_pct,
+        concentration_strategist_pct=req.strategist_concentration_pct,
+        max_theoretical_loss_pct=req.max_theoretical_loss_pct,
+    )
+    dashboard = compute_dashboard(
+        entries=journal.list(limit=10_000, outcomes=[JournalOutcome.OPEN]),
+        account=req.account,
+        config=cfg,
+    )
+    payload = dashboard.to_dict()
+    return DashboardResponse(**payload)
+
+
+# ----------------------------------------------------------------- Bankroll
+class BankrollRequest(BaseModel):
+    account: Account
+
+
+class BankrollAllocation(BaseModel):
+    name: str
+    allocation_pct: float
+    allocation_cash: float
+    kelly_fraction: float
+    max_pct_per_trade: float
+    deployed: float
+    open_positions: int
+    utilization: float
+    over_limit: bool
+
+
+class BankrollResponse(BaseModel):
+    cash: float
+    total_deployed: float
+    total_cap: float
+    total_utilization: float
+    over_total_cap: bool
+    allocations: list[BankrollAllocation]
+
+
+@router.post("/bankroll/status", response_model=BankrollResponse)
+def bankroll_status(
+    req: BankrollRequest,
+    journal: TradeJournal = Depends(get_journal),
+) -> BankrollResponse:
+    status: BankrollStatus = compute_bankroll(
+        account=req.account,
+        entries=journal.list(limit=10_000),
+        budgets=default_budgets(),
+    )
+    payload = status.to_dict()
+    return BankrollResponse(**payload)

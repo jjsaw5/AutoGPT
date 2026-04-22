@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { BacktestPanel } from "./components/BacktestPanel";
 import { Banner } from "./components/Banner";
 import { JournalPanel } from "./components/JournalPanel";
+import { RiskDashboardPanel } from "./components/RiskDashboardPanel";
 import { TradeCard } from "./components/TradeCard";
 import { UnifiedCard } from "./components/UnifiedCard";
 import { ZeroDTEPanel } from "./components/ZeroDTEPanel";
@@ -9,7 +10,7 @@ import { analyze, unifiedAnalyze } from "./lib/api";
 import type { AnalyzeResponse, Bias, UnifiedResponse } from "./lib/api";
 
 type Mode = "unified" | "sosnoff";
-type Tab = "analyze" | "journal" | "zero-dte" | "backtest";
+type Tab = "analyze" | "risk" | "journal" | "zero-dte" | "backtest";
 
 export function App() {
   const [ticker, setTicker] = useState("SPY");
@@ -58,7 +59,7 @@ export function App() {
             </p>
           </div>
           <nav className="flex gap-1 text-sm bg-slate-900 border border-slate-800 rounded overflow-hidden">
-            {(["analyze", "journal", "zero-dte", "backtest"] as Tab[]).map((t) => (
+            {(["analyze", "risk", "journal", "zero-dte", "backtest"] as Tab[]).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -69,11 +70,13 @@ export function App() {
               >
                 {t === "analyze"
                   ? "Analyze"
-                  : t === "journal"
-                    ? "Journal"
-                    : t === "zero-dte"
-                      ? "0DTE"
-                      : "Backtest"}
+                  : t === "risk"
+                    ? "Risk"
+                    : t === "journal"
+                      ? "Journal"
+                      : t === "zero-dte"
+                        ? "0DTE"
+                        : "Backtest"}
               </button>
             ))}
           </nav>
@@ -138,6 +141,7 @@ export function App() {
           </>
         )}
 
+        {tab === "risk" && <RiskDashboardPanel />}
         {tab === "journal" && <JournalPanel />}
         {tab === "zero-dte" && <ZeroDTEPanel />}
         {tab === "backtest" && <BacktestPanel />}

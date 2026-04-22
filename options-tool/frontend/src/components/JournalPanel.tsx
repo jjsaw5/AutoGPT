@@ -1,4 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import type { AnalyticsResponse, JournalEntry } from "../lib/api";
 import { journalAnalytics, listJournal } from "../lib/api";
 
@@ -63,6 +72,13 @@ export function JournalPanel() {
             value={isFinite(analytics.profit_factor) ? analytics.profit_factor.toFixed(2) : "∞"}
           />
           <Metric label="Avg R" value={analytics.average_r.toFixed(2)} />
+        </div>
+      )}
+
+      {analytics && analytics.r_multiples.length > 0 && (
+        <div className="p-4 pb-0">
+          <div className="text-xs uppercase text-slate-500 mb-1">R-multiple distribution</div>
+          <RMultipleHistogram rs={analytics.r_multiples} />
         </div>
       )}
 
@@ -131,6 +147,41 @@ export function JournalPanel() {
       </div>
     </div>
   );
+}
+
+function RMultipleHistogram({ rs }: { rs: number[] }) {
+  const bins = useMemo(() => bucketise(rs), [rs]);
+  return (
+    <div className="bg-slate-950 border border-slate-800 rounded">
+      <ResponsiveContainer width="100%" height={160}>
+        <BarChart data={bins} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+          <XAxis dataKey="label" stroke="#94a3b8" tick={{ fontSize: 10 }} />
+          <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} allowDecimals={false} />
+          <Tooltip
+            contentStyle={{ background: "#0f172a", border: "1px solid #334155" }}
+            formatter={(v: number) => [v, "trades"]}
+          />
+          <Bar dataKey="count" fill="#22d3ee" />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function bucketise(rs: number[]): Array<{ label: string; count: number }> {
+  const edges = [-3, -2, -1, 0, 1, 2, 3];
+  const buckets = edges.slice(0, -1).map((lo, i) => ({
+    label: `${lo} to ${edges[i + 1]}`,
+    count: 0,
+  }));
+  for (const r of rs) {
+    const idx = edges.findIndex((edge, i) => i < edges.length - 1 && r >= edge && r < edges[i + 1]);
+    if (idx >= 0) buckets[idx].count += 1;
+    else if (r >= edges[edges.length - 1]) buckets[buckets.length - 1].count += 1;
+    else buckets[0].count += 1;
+  }
+  return buckets;
 }
 
 function outcomeColour(outcome: string): string {

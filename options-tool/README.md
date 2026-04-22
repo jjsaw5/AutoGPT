@@ -18,7 +18,7 @@ no runtime dependency on it.
 | 2     | Thorp (quant edge) + Saliba (defined-risk) + unified side-by-side card    | **shipped**   |
 | 3     | High-volume + 0DTE modules with their own guardrails                      | **shipped**   |
 | 4     | Backtest harness                                                          | **shipped**   |
-| 5     | Trade journal + analytics + risk-dashboard polish                         | not started   |
+| 5     | Trade journal + analytics + risk-dashboard polish                         | **shipped**   |
 
 ## Architecture
 
@@ -28,8 +28,9 @@ options-tool/
 │   └── app/
 │       ├── core/         # pydantic models + BSM pricing + vol-surface fit
 │       ├── data/         # DataProvider protocol + Mock / YFinance / Polygon
-│       ├── risk/         # RiskGuard service (caps + session circuit breaker)
-│       ├── journal/      # TradeJournal (SQLite) + analytics
+│       ├── risk/         # RiskGuard + RiskDashboard (aggregated Greeks)
+│       ├── bankroll/     # Shared bankroll manager + per-strategist budgets
+│       ├── journal/      # TradeJournal (SQLite, with setup_snapshot) + analytics
 │       ├── backtest/     # Replay engine + performance metrics
 │       ├── strategists/  # Sosnoff, Thorp, Saliba, HighVolume, ZeroDTE
 │       ├── api/          # FastAPI routes + DI
@@ -81,6 +82,25 @@ npm run dev        # http://localhost:5173 (proxies /api to :8001)
 Type-check: `npm run build`. Lint: `npm run lint`.
 
 ## Methodology citations
+
+### Risk dashboard + bankroll manager (Phase 5)
+
+- ``app.risk.compute_dashboard`` — pulls open journal entries, rebuilds
+  ``Position`` objects from each entry's ``setup_snapshot``, and aggregates
+  Greeks via ``app.portfolio.aggregate``. Exposure is broken down by ticker
+  and by strategist. Concentration warnings fire when a single ticker
+  exceeds 25% of cash, a single strategist exceeds 40%, or aggregate max
+  theoretical loss exceeds 50%.
+- ``app.bankroll.compute_bankroll`` — surfaces shared-bankroll state: total
+  deployed vs. ``Account.max_total_deployed_pct``, plus per-strategist
+  allocation caps (defaults: Sosnoff 30%, Saliba 25%, Thorp 20%,
+  HighVolume 15%, ZeroDTE 10%). Each strategist keeps its own Kelly
+  fraction and per-trade cap. Enforcement lives in the strategists'
+  ``size()`` methods; this service is purely for visibility.
+- ``JournalEntry.setup_snapshot`` — new in Phase 5. Persists the full
+  ``TradeSetup`` (legs, Greeks, stop-loss) as JSON alongside the journal
+  row so the dashboard can compute Greeks without re-querying chains. The
+  journal store includes an additive SQLite migration for pre-Phase-5 DBs.
 
 ### Backtest harness (Phase 4)
 
@@ -198,6 +218,27 @@ cost, rate limits, and notes on when each is appropriate.
 - [x] 26 pytest cases (domain models, providers, IVR/IVP math, picker, sizing,
       management, API smoke)
 - [x] README with architecture, run instructions, and methodology citations
+
+## Definition of done (Phase 5)
+
+- [x] ``JournalEntry`` gains a ``setup_snapshot: TradeSetup | None`` field.
+      ``TradeJournal`` persists it as JSON and includes an additive SQLite
+      migration so pre-Phase-5 databases keep opening.
+- [x] ``Backtester`` records the snapshot on every entry.
+- [x] ``app.risk.RiskDashboard`` — open-position count, total contracts,
+      capital-at-risk, max-theoretical-loss, portfolio Greeks
+      (delta/gamma/theta/vega/notional), exposure by ticker and by
+      strategist, and three concentration warnings
+      (ticker / strategist / aggregate MTL).
+- [x] ``app.bankroll.BankrollStatus`` — shared account view with
+      per-strategist allocation, deployed, open positions, utilisation,
+      and over-limit flags. Defaults cover all five Phase-3 strategists.
+- [x] API: ``POST /api/risk/dashboard`` and ``POST /api/bankroll/status``.
+- [x] Frontend: ``RiskDashboardPanel`` tab with warnings banner, Greeks
+      tiles, exposure tables, and utilisation bars for the bankroll.
+      ``JournalPanel`` gains an R-multiple distribution histogram.
+- [x] 19 new pytests; 109 passing total; ``mypy --strict`` clean on 34
+      source files.
 
 ## Definition of done (Phase 4)
 
