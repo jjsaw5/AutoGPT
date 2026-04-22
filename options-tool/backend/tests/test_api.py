@@ -38,6 +38,34 @@ def test_analyze_returns_setup_for_default_mock() -> None:
     assert body["setup"]["strategy"] in {"iron_condor", "skip"}
 
 
+def test_backtest_run_returns_metrics_and_equity_curve() -> None:
+    reset_provider_cache()
+    client = TestClient(app)
+    resp = client.post(
+        "/api/backtest/run",
+        json={
+            "ticker": "SPY",
+            "strategist": "saliba",
+            "start": "2025-06-02",
+            "end": "2025-07-15",
+            "account": {
+                "cash": 100_000,
+                "kelly_fraction": 0.25,
+                "max_pct_per_trade": 0.05,
+                "max_total_deployed_pct": 0.5,
+            },
+            "fixed_contracts": 1,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert {"cagr", "max_drawdown", "sharpe", "sortino", "win_rate", "profit_factor", "trades"} <= set(
+        body["metrics"].keys()
+    )
+    assert body["trade_count"] >= 1
+    assert len(body["equity_curve"]) > 0
+
+
 def test_unified_analyze_returns_all_five_strategists() -> None:
     reset_provider_cache()
     client = TestClient(app)

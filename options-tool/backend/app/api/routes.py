@@ -16,9 +16,13 @@ Phase 3:
 - ``GET  /api/journal/analytics`` — win rate, R-multiples, Kelly drift
 - ``POST /api/risk/check`` — ask the RiskGuard if a proposed entry is allowed
 - ``GET  /api/zero-dte/signals/{ticker}`` — signal log for today's 0DTE session
+
+Phase 4:
+- ``POST /api/backtest/run`` — replay a strategist over a synthetic date range
 """
 from __future__ import annotations
 
+import math
 from datetime import date, datetime, timezone
 from typing import Literal
 
@@ -26,6 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_journal, get_provider
+from app.backtest.engine import Backtester, BacktestResult
 from app.core.models import (
     Account,
     JournalEntry,
@@ -35,6 +40,7 @@ from app.core.models import (
     TradeSetup,
 )
 from app.data.base import DataProvider
+from app.data.mock_provider import MockProvider
 from app.journal.analytics import compute_analytics
 from app.journal.store import TradeJournal
 from app.risk.guard import RiskCaps, RiskGuard
@@ -366,6 +372,109 @@ class ZeroDTESignal(BaseModel):
     score: int
     would_trade: bool
     notes: list[str]
+
+
+# ----------------------------------------------------------------- Backtest
+BacktestStrategist = Literal["sosnoff", "saliba", "thorp", "high_volume"]
+
+
+class BacktestRequest(BaseModel):
+    ticker: str = "SPY"
+    strategist: BacktestStrategist = "saliba"
+    start: date
+    end: date
+    account: Account = Account(cash=100_000)
+    # Synthetic market path — keeps Phase 4 self-contained without paid data.
+    base_spot: float = 100.0
+    spot_drift_per_day: float = 0.05
+    spot_wobble_amplitude: float = 3.0
+    spot_wobble_period_days: float = 15.0
+    base_iv: float = 0.35
+    iv_amplitude: float = 0.05
+    iv_period_days: float = 20.0
+    risk_free_rate: float = 0.045
+    fixed_contracts: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Override the strategist's Kelly sizer to use N contracts per entry. "
+            "Useful for demos — synthetic data often gives negative-EV setups that "
+            "Kelly correctly refuses, leaving the engine unexercised."
+        ),
+    )
+
+
+def _synthetic_chain_factory(req: BacktestRequest) -> tuple[object, object]:
+    def make(d: date) -> OptionChain:
+        idx = (d - req.start).days
+        spot = (
+            req.base_spot
+            + req.spot_drift_per_day * idx
+            + req.spot_wobble_amplitude * math.sin(idx / req.spot_wobble_period_days)
+        )
+        iv = req.base_iv + req.iv_amplitude * math.cos(idx / req.iv_period_days)
+        as_of = datetime.combine(d, datetime.min.time().replace(hour=15), tzinfo=timezone.utc)
+        return MockProvider(spot=max(spot, 1.0), base_iv=max(iv, 0.05), as_of=as_of).get_chain(
+            req.ticker
+        )
+
+    return None, make
+
+
+def _strategist_for_backtest(
+    name: BacktestStrategist, provider: DataProvider
+) -> tuple[object, object, object, str]:
+    """Return (analyze, size, manage, display_name)."""
+    if name == "sosnoff":
+        s = SosnoffStrategist(provider=provider)
+        return (lambda t, c: s.analyze(t, c, bias="neutral"), s.size, s.manage, "sosnoff")
+    if name == "saliba":
+        s2 = SalibaStrategist(provider=provider)
+        return (s2.analyze, s2.size, s2.manage, "saliba")
+    if name == "thorp":
+        s3 = ThorpStrategist(provider=provider)
+        return (s3.analyze, s3.size, s3.manage, "thorp")
+    if name == "high_volume":
+        s4 = HighVolumeStrategist(provider=provider)
+        return (s4.analyze, s4.size, s4.manage, "high_volume")
+    raise HTTPException(status_code=400, detail=f"Unknown strategist {name!r}")
+
+
+@router.post("/backtest/run", response_model=BacktestResult)
+def backtest_run(
+    req: BacktestRequest, provider: DataProvider = Depends(get_provider)
+) -> BacktestResult:
+    if req.end < req.start:
+        raise HTTPException(status_code=400, detail="end must be on or after start")
+    analyze, size_fn, manage, label = _strategist_for_backtest(req.strategist, provider)
+    _, chain_factory = _synthetic_chain_factory(req)
+    if req.fixed_contracts is not None:
+        fixed_n = req.fixed_contracts
+
+        def _fixed_sizer(setup: TradeSetup, account: Account) -> PositionSize:
+            per_spread_risk = max(setup.max_loss, 0.01) * 100
+            return PositionSize(
+                contracts=fixed_n,
+                capital_at_risk=fixed_n * per_spread_risk,
+                pct_of_account=(fixed_n * per_spread_risk) / account.cash if account.cash > 0 else 0.0,
+                rationale=f"fixed_contracts override ({fixed_n}/trade); Kelly bypassed.",
+            )
+
+        size_fn = _fixed_sizer
+
+    bt = Backtester(
+        ticker=req.ticker,
+        strategist_name=label,
+        analyze=analyze,  # type: ignore[arg-type]
+        size=size_fn,  # type: ignore[arg-type]
+        manage=manage,  # type: ignore[arg-type]
+        chain_factory=chain_factory,  # type: ignore[arg-type]
+        account=req.account,
+        start=req.start,
+        end=req.end,
+        risk_free_rate=req.risk_free_rate,
+    )
+    return bt.run()
 
 
 @router.get("/zero-dte/signals/{ticker}", response_model=ZeroDTESignal)

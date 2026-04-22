@@ -1,4 +1,5 @@
 import { FormEvent, useState } from "react";
+import { BacktestPanel } from "./components/BacktestPanel";
 import { Banner } from "./components/Banner";
 import { JournalPanel } from "./components/JournalPanel";
 import { TradeCard } from "./components/TradeCard";
@@ -8,7 +9,7 @@ import { analyze, unifiedAnalyze } from "./lib/api";
 import type { AnalyzeResponse, Bias, UnifiedResponse } from "./lib/api";
 
 type Mode = "unified" | "sosnoff";
-type Tab = "analyze" | "journal" | "zero-dte";
+type Tab = "analyze" | "journal" | "zero-dte" | "backtest";
 
 export function App() {
   const [ticker, setTicker] = useState("SPY");
@@ -57,7 +58,7 @@ export function App() {
             </p>
           </div>
           <nav className="flex gap-1 text-sm bg-slate-900 border border-slate-800 rounded overflow-hidden">
-            {(["analyze", "journal", "zero-dte"] as Tab[]).map((t) => (
+            {(["analyze", "journal", "zero-dte", "backtest"] as Tab[]).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -66,7 +67,13 @@ export function App() {
                   tab === t ? "bg-slate-800 text-slate-100" : "text-slate-400 hover:bg-slate-800/50"
                 }`}
               >
-                {t === "analyze" ? "Analyze" : t === "journal" ? "Journal" : "0DTE"}
+                {t === "analyze"
+                  ? "Analyze"
+                  : t === "journal"
+                    ? "Journal"
+                    : t === "zero-dte"
+                      ? "0DTE"
+                      : "Backtest"}
               </button>
             ))}
           </nav>
@@ -133,6 +140,7 @@ export function App() {
 
         {tab === "journal" && <JournalPanel />}
         {tab === "zero-dte" && <ZeroDTEPanel />}
+        {tab === "backtest" && <BacktestPanel />}
       </div>
     </div>
   );

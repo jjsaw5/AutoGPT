@@ -17,7 +17,7 @@ no runtime dependency on it.
 | 1     | Data layer + Sosnoff (Tastytrade) module + single Trade Card in React UI  | **shipped**   |
 | 2     | Thorp (quant edge) + Saliba (defined-risk) + unified side-by-side card    | **shipped**   |
 | 3     | High-volume + 0DTE modules with their own guardrails                      | **shipped**   |
-| 4     | Backtest harness                                                          | not started   |
+| 4     | Backtest harness                                                          | **shipped**   |
 | 5     | Trade journal + analytics + risk-dashboard polish                         | not started   |
 
 ## Architecture
@@ -30,6 +30,7 @@ options-tool/
 │       ├── data/         # DataProvider protocol + Mock / YFinance / Polygon
 │       ├── risk/         # RiskGuard service (caps + session circuit breaker)
 │       ├── journal/      # TradeJournal (SQLite) + analytics
+│       ├── backtest/     # Replay engine + performance metrics
 │       ├── strategists/  # Sosnoff, Thorp, Saliba, HighVolume, ZeroDTE
 │       ├── api/          # FastAPI routes + DI
 │       ├── portfolio.py  # Greeks aggregator
@@ -80,6 +81,23 @@ npm run dev        # http://localhost:5173 (proxies /api to :8001)
 Type-check: `npm run build`. Lint: `npm run lint`.
 
 ## Methodology citations
+
+### Backtest harness (Phase 4)
+
+- ``app.backtest.metrics`` — pure functions: CAGR, max drawdown, annualised
+  Sharpe, annualised Sortino, win rate, profit factor. Annualisation factor
+  defaults to 252. All guard against degenerate inputs (zero equity, single
+  return, zero variance) so they never raise.
+- ``app.backtest.Backtester`` — parametrised on three callables
+  (``analyze``, ``size``, ``manage``) so tests can drive it deterministically
+  without a full strategist instance. Positions are marked daily using BSM
+  against that day's spot and ATM IV, and closed on management verdict or
+  forced at expiry.
+- ``POST /api/backtest/run`` replays against a synthetic market path — a
+  drift + sinusoid in spot and a cosine in ATM IV — so demos work without
+  paid historical data. ``fixed_contracts`` overrides the strategist's Kelly
+  sizer; surfaces in the UI with an "engine validation, not strategy
+  evaluation" warning.
 
 ### High-volume / "Elite Options Trader" (Phase 3)
 
@@ -180,6 +198,21 @@ cost, rate limits, and notes on when each is appropriate.
 - [x] 26 pytest cases (domain models, providers, IVR/IVP math, picker, sizing,
       management, API smoke)
 - [x] README with architecture, run instructions, and methodology citations
+
+## Definition of done (Phase 4)
+
+- [x] ``app.backtest.metrics`` — CAGR, max drawdown, Sharpe, Sortino, win
+      rate, profit factor, all pure functions with degenerate-input guards
+- [x] ``app.backtest.Backtester`` — replays a strategist over a date range,
+      marks positions daily via BSM, closes on management verdict or expiry,
+      records to a ``TradeJournal`` and emits an equity curve
+- [x] ``POST /api/backtest/run`` with a synthetic chain factory and an
+      optional ``fixed_contracts`` sizer override
+- [x] ``BacktestPanel`` frontend tab with the run form, metric tiles, and a
+      Recharts equity curve
+- [x] 16 new pytests (metrics edge cases, engine end-to-end with a trivial
+      strategist, equity-curve shape, management close, API smoke)
+- [x] 90 tests passing, ``mypy --strict`` clean across 31 source files
 
 ## Definition of done (Phase 3)
 
