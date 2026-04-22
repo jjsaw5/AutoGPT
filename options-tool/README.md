@@ -15,7 +15,7 @@ no runtime dependency on it.
 | Phase | Scope                                                                     | Status        |
 | ----- | ------------------------------------------------------------------------- | ------------- |
 | 1     | Data layer + Sosnoff (Tastytrade) module + single Trade Card in React UI  | **shipped**   |
-| 2     | Thorp (quant edge) + Saliba (defined-risk) + unified side-by-side card    | not started   |
+| 2     | Thorp (quant edge) + Saliba (defined-risk) + unified side-by-side card    | **shipped**   |
 | 3     | High-volume + 0DTE modules with their own guardrails                      | not started   |
 | 4     | Backtest harness                                                          | not started   |
 | 5     | Trade journal + analytics + risk-dashboard polish                         | not started   |
@@ -26,9 +26,9 @@ no runtime dependency on it.
 options-tool/
 ├── backend/              # FastAPI + pandas/numpy/scipy + SQLite
 │   └── app/
-│       ├── core/         # pydantic domain models (OptionChain, TradeSetup, …)
+│       ├── core/         # pydantic models + BSM pricing + vol-surface fit
 │       ├── data/         # DataProvider protocol + Mock / YFinance / Polygon
-│       ├── strategists/  # Strategist protocol + SosnoffStrategist
+│       ├── strategists/  # Sosnoff, Thorp, Saliba (share the Strategist proto)
 │       ├── api/          # FastAPI routes + DI
 │       ├── portfolio.py  # Greeks aggregator
 │       └── main.py       # uvicorn entrypoint
@@ -79,6 +79,30 @@ Type-check: `npm run build`. Lint: `npm run lint`.
 
 ## Methodology citations
 
+### Thorp — quantitative edge (Phase 2)
+
+- **Fractional Kelly sizing**: Edward O. Thorp, _A Man for All Markets_
+  (Random House, 2017), and _The Kelly Capital Growth Investment Criterion_
+  (World Scientific, 2011). Default multiplier 0.25× of full Kelly.
+- **Vol surface edge**: market IV compared to a fitted per-expiry quadratic
+  smile σ(k) ≈ a₀ + a₁·k + a₂·k² in log-moneyness — the textbook polynomial
+  SVI surrogate from Jim Gatheral, _The Volatility Surface_ (Wiley, 2006).
+- **Delta-neutral pair construction**: primary option plus an opposite-right
+  contract near −delta. Stock-hedged variant deferred to Phase 4.
+
+### Saliba — defined-risk structures (Phase 2)
+
+- Anthony Saliba, _Managing Expectations_ (Oxford Futures, 1996) and
+  _Options: Trading Strategies That Work_ (Marketplace Books, 2008).
+- Iron condor / iron butterfly / long butterfly / broken-wing fly enumerated
+  and scored by composite `(R:R, POP, 1 − PoT)`. Candidates below a configurable
+  `min_reward_risk` are rejected.
+- POP computed from the risk-neutral lognormal density; PoT from the
+  reflection-principle first-passage formula (Shreve, _Stochastic Calculus for
+  Finance II_, Theorem 7.2.1).
+
+### Sosnoff — premium selling (Phase 1)
+
 The Sosnoff module encodes rules publicly documented by the Tastytrade team:
 
 - **IV Rank / IV Percentile**: Sosnoff & Battista, _The tastytrade Guide to
@@ -125,3 +149,23 @@ cost, rate limits, and notes on when each is appropriate.
 - [x] 26 pytest cases (domain models, providers, IVR/IVP math, picker, sizing,
       management, API smoke)
 - [x] README with architecture, run instructions, and methodology citations
+
+## Definition of done (Phase 2)
+
+- [x] `app.core.bsm` — dependency-free BSM pricing, Greeks, implied-vol
+      Newton–Raphson with bisection fallback, lognormal POP, and
+      reflection-principle PoT
+- [x] `app.core.vol_surface` — per-expiry quadratic smile fit with RMSE report
+- [x] `ThorpStrategist` — flags contracts whose market IV deviates from the
+      fitted smile, builds a delta-neutral pair, sizes with fractional Kelly
+      capped by `max_pct_per_trade`
+- [x] `SalibaStrategist` — enumerates iron condor (two wing widths), iron
+      butterfly, long-call butterfly, broken-wing put fly; scores by
+      `(R:R, POP, PoT)`; rejects below `min_reward_risk`
+- [x] `POST /api/unified-analyze` runs all three strategists on one ticker
+      and returns their verdicts side-by-side
+- [x] `UnifiedCard` React component — one row per strategist with verdict
+      chip, one-line headline, expandable full `TradeCard`
+- [x] 48 pytest cases (Phase 1's 26 plus BSM sanity, vol surface, Thorp,
+      Saliba, and the unified endpoint)
+- [x] `mypy --strict` clean on 21 source files

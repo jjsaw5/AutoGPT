@@ -36,3 +36,17 @@ def test_analyze_returns_setup_for_default_mock() -> None:
     # Mock base_iv=0.30 with history range 0.18-0.55 -> IVR ~32, condor band.
     assert body["setup"] is not None
     assert body["setup"]["strategy"] in {"iron_condor", "skip"}
+
+
+def test_unified_analyze_returns_all_three_strategists() -> None:
+    reset_provider_cache()
+    client = TestClient(app)
+    resp = client.post("/api/unified-analyze", json={"ticker": "SPY", "bias": "neutral"})
+    assert resp.status_code == 200
+    body = resp.json()
+    names = {r["name"] for r in body["results"]}
+    assert names == {"sosnoff", "thorp", "saliba"}
+    # Every result must carry a headline string for the UI.
+    for r in body["results"]:
+        assert r["headline"]
+    assert "Educational" in body["banner"]

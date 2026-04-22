@@ -8,31 +8,10 @@ from __future__ import annotations
 import math
 from datetime import date, datetime, timedelta, timezone
 
+from app.core.bsm import delta as bsm_delta
+from app.core.bsm import price as bsm_price
 from app.core.models import OptionChain, OptionContract, OptionRight
 from app.data.base import DataProvider, IVHistoryPoint, PriceBar
-
-
-def _norm_cdf(x: float) -> float:
-    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
-
-
-def _bsm_price(spot: float, strike: float, t: float, r: float, sigma: float, right: OptionRight) -> float:
-    """Black–Scholes–Merton price (no dividends). Used only by the mock."""
-    if t <= 0 or sigma <= 0:
-        intrinsic = max(spot - strike, 0.0) if right is OptionRight.CALL else max(strike - spot, 0.0)
-        return intrinsic
-    d1 = (math.log(spot / strike) + (r + 0.5 * sigma**2) * t) / (sigma * math.sqrt(t))
-    d2 = d1 - sigma * math.sqrt(t)
-    if right is OptionRight.CALL:
-        return spot * _norm_cdf(d1) - strike * math.exp(-r * t) * _norm_cdf(d2)
-    return strike * math.exp(-r * t) * _norm_cdf(-d2) - spot * _norm_cdf(-d1)
-
-
-def _bsm_delta(spot: float, strike: float, t: float, r: float, sigma: float, right: OptionRight) -> float:
-    if t <= 0 or sigma <= 0:
-        return 1.0 if (right is OptionRight.CALL and spot > strike) else 0.0
-    d1 = (math.log(spot / strike) + (r + 0.5 * sigma**2) * t) / (sigma * math.sqrt(t))
-    return _norm_cdf(d1) if right is OptionRight.CALL else _norm_cdf(d1) - 1.0
 
 
 class MockProvider:
@@ -77,10 +56,10 @@ class MockProvider:
                 moneyness = abs(strike - spot) / spot
                 iv = self._base_iv + 0.10 * moneyness
                 for right in (OptionRight.CALL, OptionRight.PUT):
-                    price = _bsm_price(spot, strike, t, r, iv, right)
-                    delta = _bsm_delta(spot, strike, t, r, iv, right)
-                    bid = max(price - 0.05, 0.01)
-                    ask = price + 0.05
+                    fair = bsm_price(spot, strike, t, r, iv, right)
+                    d = bsm_delta(spot, strike, t, r, iv, right)
+                    bid = max(fair - 0.05, 0.01)
+                    ask = fair + 0.05
                     contracts.append(
                         OptionContract(
                             symbol=f"{ticker.upper()}{exp:%y%m%d}{right.value}{int(strike*1000):08d}",
@@ -90,11 +69,11 @@ class MockProvider:
                             right=right,
                             bid=round(bid, 2),
                             ask=round(ask, 2),
-                            last=round(price, 2),
+                            last=round(fair, 2),
                             volume=100,
                             open_interest=500,
                             implied_vol=iv,
-                            delta=delta,
+                            delta=d,
                             as_of=self._as_of,
                         )
                     )

@@ -1,13 +1,18 @@
 import { FormEvent, useState } from "react";
 import { Banner } from "./components/Banner";
 import { TradeCard } from "./components/TradeCard";
-import { analyze } from "./lib/api";
-import type { AnalyzeResponse, Bias } from "./lib/api";
+import { UnifiedCard } from "./components/UnifiedCard";
+import { analyze, unifiedAnalyze } from "./lib/api";
+import type { AnalyzeResponse, Bias, UnifiedResponse } from "./lib/api";
+
+type Mode = "unified" | "sosnoff";
 
 export function App() {
   const [ticker, setTicker] = useState("SPY");
   const [bias, setBias] = useState<Bias>("neutral");
-  const [result, setResult] = useState<AnalyzeResponse | null>(null);
+  const [mode, setMode] = useState<Mode>("unified");
+  const [single, setSingle] = useState<AnalyzeResponse | null>(null);
+  const [unified, setUnified] = useState<UnifiedResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -16,8 +21,14 @@ export function App() {
     setLoading(true);
     setError(null);
     try {
-      const r = await analyze(ticker.trim().toUpperCase(), bias);
-      setResult(r);
+      const t = ticker.trim().toUpperCase();
+      if (mode === "unified") {
+        setUnified(await unifiedAnalyze(t, bias));
+        setSingle(null);
+      } else {
+        setSingle(await analyze(t, bias));
+        setUnified(null);
+      }
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -26,17 +37,18 @@ export function App() {
   }
 
   const banner =
-    result?.banner ??
+    unified?.banner ??
+    single?.banner ??
     "Educational tool. Not financial advice. Paper trading only in v1.";
 
   return (
     <div className="min-h-screen flex flex-col">
       <Banner text={banner} />
-      <div className="max-w-4xl w-full mx-auto p-6 space-y-6">
+      <div className="max-w-5xl w-full mx-auto p-6 space-y-6">
         <header>
           <h1 className="text-3xl font-semibold">Options Analysis Tool</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Phase 1 · Sosnoff / Tastytrade premium-selling module
+            Phase 2 · Sosnoff · Thorp · Saliba — unified trade card
           </p>
         </header>
 
@@ -65,6 +77,17 @@ export function App() {
               <option value="bearish">Bearish</option>
             </select>
           </label>
+          <label className="flex flex-col text-sm">
+            <span className="text-slate-400 text-xs uppercase mb-1">Mode</span>
+            <select
+              value={mode}
+              onChange={(e) => setMode(e.target.value as Mode)}
+              className="bg-slate-950 border border-slate-800 rounded px-3 py-2"
+            >
+              <option value="unified">Unified (all strategists)</option>
+              <option value="sosnoff">Sosnoff only</option>
+            </select>
+          </label>
           <button
             type="submit"
             disabled={loading}
@@ -75,12 +98,13 @@ export function App() {
           {error && <span className="text-red-400 text-sm">{error}</span>}
         </form>
 
-        {result && <TradeCard result={result} />}
+        {unified && <UnifiedCard data={unified} />}
+        {single && <TradeCard result={single} />}
 
-        {!result && !error && (
+        {!unified && !single && !error && (
           <div className="text-slate-500 text-sm">
-            Enter a ticker to run the Sosnoff module. The default Mock provider
-            returns a deterministic chain so the UI works offline.
+            Enter a ticker to run the unified trade card. Every strategist runs
+            in isolation and reports its own verdict side-by-side.
           </div>
         )}
       </div>
