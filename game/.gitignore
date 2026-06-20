@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Godot
+client/.godot/
+client/.import/
+client/export_presets.cfg
+*.translation
