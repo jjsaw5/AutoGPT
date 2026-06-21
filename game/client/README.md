@@ -1,8 +1,9 @@
 # Game Client (Godot 4 prototype)
 
-A minimal third-person scaffold so you can *see and feel* the character move.
-It is intentionally placeholder art (a capsule + boxes) — the point is a working
-camera/movement rig and backend hookup you can build a real game on top of.
+A third-person prototype so you can *see and feel* the game: move, shoot, take
+damage, and fight enemies. It's intentionally placeholder art (capsules + boxes)
+— the point is a working movement/camera/combat rig and backend hookup you can
+build a real game on top of.
 
 ## Run it
 
@@ -19,36 +20,73 @@ camera/movement rig and backend hookup you can build a real game on top of.
 | Look | Mouse |
 | Sprint | `Shift` |
 | Jump | `Space` (double-jump unlocks via the Mobility skill — raise `max_jumps`) |
+| **Fire** | **Left mouse** (hold for auto) |
+| **Reload** | **`R`** |
 | Open chest | Walk into a box, press `E` |
-| Free the mouse | `Esc` |
+| Free / recapture mouse | `Esc` / left-click |
+
+The three red capsules are enemies: they chase you, melee you in range, and die
+when you shoot them down. Each kill bumps the on-screen counter and (when the
+backend is connected) progresses the "First Blood" quest.
 
 ## What's in here
 
 ```
 scenes/
-├── World.tscn   # ground, light, the player, three chests
-├── Player.tscn  # CharacterBody3D + third-person SpringArm camera
-└── Chest.tscn   # walk-in trigger that "opens"
+├── World.tscn   # ground, light, player, chests, enemies, HUD
+├── Player.tscn  # CharacterBody3D + camera + Health + Weapon
+├── Enemy.tscn   # chasing melee enemy with a Health component
+├── Chest.tscn   # walk-in trigger that "opens"
+└── HUD.tscn     # crosshair, health/shield bars, ammo, kills
 scripts/
-├── Player.gd    # run / sprint / jump / mouse-look controller
-├── Chest.gd     # chest interaction (+ optional backend call)
-└── ApiClient.gd # HTTP client for the FastAPI backend
+├── Player.gd       # run / sprint / jump / look + firing
+├── Weapon.gd       # hitscan shooting, ammo, reload (stats mirror the backend)
+├── Health.gd       # reusable health + shield component
+├── Enemy.gd        # chase + melee AI, reports kills on death
+├── Chest.gd        # chest interaction
+├── HUD.gd          # binds the HUD to the player's Health/Weapon
+├── GameSession.gd  # autoload: session ids + forwards kills to the backend
+└── ApiClient.gd    # autoload ("Api"): HTTP client for the FastAPI backend
 ```
+
+### How combat fits together
+
+- **Weapon** raycasts from the camera centre each shot; if it hits a node in the
+  `enemy` group it calls `take_damage()` on that enemy's **Health** child.
+- **Health** absorbs damage into shields first, then health, and emits `died`.
+- **Enemy** chases the player, melees in range, and on `died` reports an
+  `enemy_killed` event through **GameSession** → the backend quest system.
+- **HUD** subscribes to the player's Health/Weapon signals to draw bars + ammo.
+- Weapon stats (`damage`, `fire_rate`, `max_range`, `mag_size`) intentionally
+  mirror the backend item stats in `game/server/app/content.py`, so a real game
+  can drive the equipped weapon straight from the loadout the API returns.
 
 ## Connecting to the backend
 
-1. Start the backend (`cd ../server && ./run.sh`).
-2. In Godot: **Project → Project Settings → Autoload**, add
-   `res://scripts/ApiClient.gd` with the name **`Api`**.
-3. Now any script can call e.g.
-   `Api.open_chest(character_id, "chest_riverbed", func(r): print(r.data))`.
+`ApiClient` and `GameSession` are already registered as autoloads (`Api` /
+`GameSession`) in `project.godot`, so no manual setup is needed. To light up the
+backend-driven features:
 
-> Note: the camera transform and look sensitivity are rough defaults — tweak
-> `mouse_sensitivity` in `Player.gd` (and flip its sign if pitch feels
-> inverted). This is a starting point, not a finished feel.
+1. Start the backend (`cd ../server && ./run.sh`).
+2. Set the session ids once the player/character exist, e.g. from a menu script:
+   ```gdscript
+   Api.create_player("Ace", func(r):
+       GameSession.player_id = r.data.id
+       Api.create_character(r.data.id, "Nova", {}, func(c):
+           GameSession.character_id = c.data.id))
+   ```
+3. Kills now POST to `/quests/events`; chests can call `Api.open_chest(...)`.
+
+Everything degrades to a safe no-op if the backend isn't running, so the game is
+fully playable offline.
+
+> Note: camera offset and `mouse_sensitivity` (in `Player.gd`) are rough
+> defaults — tweak in-editor. Flip the sensitivity sign if pitch feels inverted.
 
 ## Honest status
 
-This is a **prototype scaffold**, not a game. Missing (and each is real work):
-shooting/weapons, health & combat, enemies/AI, animation, real 3D models,
-a proper level, UI/HUD, and networking for multiplayer.
+This is a **playable combat prototype**, not a finished game. Hitscan combat,
+health/shields, basic enemy AI and a HUD work. Still real work ahead: animation
+and real 3D models, weapon variety driven by the loadout, projectile/recoil
+feel, enemy navigation (NavMesh) and spawning, sound, polish, and networking for
+multiplayer.

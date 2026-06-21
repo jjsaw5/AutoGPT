@@ -22,7 +22,7 @@ A live game like this has two very different halves:
 | Half | Needs | Status |
 |------|-------|--------|
 | **Backend / "meta" systems** — store, inventory, progression, skill trees, quests, loot | Pure logic + data. No art, no physics. | ✅ Built & tested here (`server/`) |
-| **Gameplay / rendering** — 3D world, third-person physics, shooting, animation | A game engine + 3D art + animation. | 🟡 Engine scaffold started (`client/`); needs art + gameplay work |
+| **Gameplay / rendering** — 3D world, third-person physics, shooting, animation | A game engine + 3D art + animation. | 🟡 Playable combat prototype in Godot (`client/`): move/shoot/enemies/HUD; needs art + polish |
 
 The honest scope note: a full Fortnite-quality shooter is a large, multi-person,
 multi-year effort. What we've done is build the **foundation that's actually
@@ -39,7 +39,7 @@ you finish the game in Godot, Unity, or Unreal.
 | 3. Character creation + equip gear/cosmetics | `server` → `/characters` loadout slots |
 | 4. Fortnite-like physics | `client` → `scripts/Player.gd` (run/sprint/jump) |
 | 5. Skill trees + attribute points | `server` → `/characters/.../skills`, `.../attributes` |
-| 6. Third-person shooter | `client` → third-person camera rig |
+| 6. Third-person shooter | `client` → camera rig + hitscan combat, enemies, HUD |
 | 7. Quests → XP / weapons / skins | `server` → `/quests` |
 
 ## Quick start

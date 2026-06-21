@@ -1,8 +1,9 @@
 extends CharacterBody3D
-## Third-person character controller (Fortnite-style feel: run, sprint, jump).
+## Third-person character controller (Fortnite-style feel: run, sprint, jump)
+## with hitscan shooting.
 ##
 ## This is a placeholder capsule. Swap the MeshInstance3D for a real rigged
-## character model later — the movement/camera rig stays the same.
+## character model later — the movement/camera/weapon rig stays the same.
 
 @export var walk_speed: float = 6.0
 @export var sprint_speed: float = 10.0
@@ -13,12 +14,15 @@ extends CharacterBody3D
 var _jumps_left: int = 0
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)
 
-@onready var _spring_arm: SpringArm3D = $CameraPivot/SpringArm3D
 @onready var _pivot: Node3D = $CameraPivot
+@onready var _camera: Camera3D = $CameraPivot/Camera3D
+@onready var _weapon: Weapon = $Weapon
+@onready var _health: Health = $Health
 
 
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_health.died.connect(_on_died)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -29,6 +33,23 @@ func _unhandled_input(event: InputEvent) -> void:
 		_pivot.rotation.x = clamp(_pivot.rotation.x, deg_to_rad(-70), deg_to_rad(70))
 	elif event.is_action_pressed("ui_cancel"):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	elif event.is_action_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
+		# Clicking back into the window recaptures the mouse instead of firing.
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	elif event.is_action_pressed("reload"):
+		_weapon.start_reload()
+
+
+func _process(_delta: float) -> void:
+	# Fire while the button is held (auto) or on each press (semi).
+	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		return
+	var wants_fire := (
+		Input.is_action_pressed("fire") if _weapon.auto
+		else Input.is_action_just_pressed("fire")
+	)
+	if wants_fire:
+		_weapon.try_fire(_camera, self)
 
 
 func _physics_process(delta: float) -> void:
@@ -56,3 +77,12 @@ func _physics_process(delta: float) -> void:
 		velocity.z = move_toward(velocity.z, 0, speed)
 
 	move_and_slide()
+
+
+func _on_died() -> void:
+	# Minimal prototype respawn: recenter and refill. Replace with a real
+	# death/respawn flow (spectate, loadout reset, etc.) later.
+	print("Player down — respawning")
+	global_position = Vector3(0, 2, 0)
+	velocity = Vector3.ZERO
+	_health.revive()

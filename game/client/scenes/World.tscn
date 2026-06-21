@@ -1,7 +1,9 @@
-[gd_scene load_steps=6 format=3 uid="uid://bworld00000001"]
+[gd_scene load_steps=8 format=3 uid="uid://bworld00000001"]
 
 [ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="1_player"]
 [ext_resource type="PackedScene" path="res://scenes/Chest.tscn" id="2_chest"]
+[ext_resource type="PackedScene" path="res://scenes/HUD.tscn" id="3_hud"]
+[ext_resource type="PackedScene" path="res://scenes/Enemy.tscn" id="4_enemy"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(200, 200)
@@ -31,6 +33,8 @@ shape = SubResource("BoxShape3D_ground")
 [node name="Player" parent="." instance=ExtResource("1_player")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0)
 
+[node name="HUD" parent="." instance=ExtResource("3_hud")]
+
 [node name="ChestRiverbed" parent="." instance=ExtResource("2_chest")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0, -6)
 chest_id = "chest_riverbed"
@@ -42,3 +46,14 @@ chest_id = "chest_ruins"
 [node name="ChestSummit" parent="." instance=ExtResource("2_chest")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 0, 9)
 chest_id = "chest_summit_vault"
+
+[node name="Enemies" type="Node3D" parent="."]
+
+[node name="Enemy1" parent="Enemies" instance=ExtResource("4_enemy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 1, -18)
+
+[node name="Enemy2" parent="Enemies" instance=ExtResource("4_enemy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -22, 1, -10)
+
+[node name="Enemy3" parent="Enemies" instance=ExtResource("4_enemy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, -28)

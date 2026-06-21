@@ -49,3 +49,8 @@ func add_xp(character_id: String, amount: int, on_done: Callable) -> void:
 
 func list_store(on_done: Callable) -> void:
 	_request(HTTPClient.METHOD_GET, "/store", {}, on_done)
+
+
+func report_event(character_id: String, event: String, on_done: Callable) -> void:
+	_request(HTTPClient.METHOD_POST, "/quests/events",
+		{"character_id": character_id, "event": event}, on_done)
