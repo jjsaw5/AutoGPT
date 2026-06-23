@@ -25,29 +25,48 @@ build a real game on top of.
 | Open chest | Walk into a box, press `E` |
 | Free / recapture mouse | `Esc` / left-click |
 
-The three red capsules are enemies: they chase you, melee you in range, and die
-when you shoot them down. Each kill bumps the on-screen counter and (when the
-backend is connected) progresses the "First Blood" quest.
+Enemies (red capsules) arrive in **escalating waves**: they spawn on a ring
+around you, chase, melee in range, and die when shot down. Clear a wave and the
+next — larger — one spawns after a short intermission. Each kill bumps the
+counter and (when the backend is connected) progresses the "First Blood" quest.
 
 ## What's in here
 
 ```
 scenes/
-├── World.tscn   # ground, light, player, chests, enemies, HUD
+├── World.tscn   # ground, light, player, chests, wave spawner, HUD
 ├── Player.tscn  # CharacterBody3D + camera + Health + Weapon
 ├── Enemy.tscn   # chasing melee enemy with a Health component
 ├── Chest.tscn   # walk-in trigger that "opens"
-└── HUD.tscn     # crosshair, health/shield bars, ammo, kills
+└── HUD.tscn     # crosshair, bars, ammo, kills, wave + banner
 scripts/
 ├── Player.gd       # run / sprint / jump / look + firing
 ├── Weapon.gd       # hitscan shooting, ammo, reload (stats mirror the backend)
 ├── Health.gd       # reusable health + shield component
 ├── Enemy.gd        # chase + melee AI, reports kills on death
+├── WaveSpawner.gd  # escalating waves, intermissions, spawn placement
 ├── Chest.gd        # chest interaction
-├── HUD.gd          # binds the HUD to the player's Health/Weapon
+├── HUD.gd          # binds the HUD to Health/Weapon/WaveSpawner
 ├── GameSession.gd  # autoload: session ids + forwards kills to the backend
 └── ApiClient.gd    # autoload ("Api"): HTTP client for the FastAPI backend
 ```
+
+### Waves
+
+`WaveSpawner.gd` (the `WaveSpawner` node in `World.tscn`) drives spawning. All
+knobs are exported and editable in the Inspector:
+
+| Property | Default | Meaning |
+|----------|---------|---------|
+| `base_enemies` | 3 | enemies in wave 1 |
+| `enemies_per_wave` | 2 | extra enemies added each wave |
+| `max_enemies_per_wave` | 20 | cap so late waves stay sane |
+| `initial_delay` / `time_between_waves` | 2s / 4s | intermission timing |
+| `spawn_radius_min/max` | 16–28 | ring distance from the player |
+| `max_waves` | 0 | `0` = endless; set N for a fixed run |
+
+Add `Marker3D` children to the spawner to use fixed spawn points instead of the
+ring. The HUD shows the current wave, enemies remaining, and a wave banner.
 
 ### How combat fits together
 
@@ -86,7 +105,7 @@ fully playable offline.
 ## Honest status
 
 This is a **playable combat prototype**, not a finished game. Hitscan combat,
-health/shields, basic enemy AI and a HUD work. Still real work ahead: animation
-and real 3D models, weapon variety driven by the loadout, projectile/recoil
-feel, enemy navigation (NavMesh) and spawning, sound, polish, and networking for
-multiplayer.
+health/shields, basic enemy AI, escalating waves and a HUD work. Still real work
+ahead: animation and real 3D models, weapon variety driven by the loadout,
+projectile/recoil feel, smarter enemy navigation (NavMesh), sound, polish, and
+networking for multiplayer.

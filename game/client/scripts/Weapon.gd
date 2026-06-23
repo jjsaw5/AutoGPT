@@ -64,9 +64,9 @@ func try_fire(camera: Camera3D, shooter: Node3D) -> void:
 	if result.is_empty():
 		return
 
-	var collider: Object = result.get("collider")
+	var collider := result.get("collider") as Node
 	if collider and collider.is_in_group("enemy"):
-		var hp := (collider as Node).get_node_or_null("Health")
+		var hp := collider.get_node_or_null("Health") as Health
 		if hp:
 			hp.take_damage(damage)
 			hit.emit(collider, damage)

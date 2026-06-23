@@ -19,7 +19,7 @@ var _player: Node3D
 func _ready() -> void:
 	add_to_group("enemy")
 	_health.died.connect(_on_died)
-	_player = get_tree().get_first_node_in_group("player")
+	_player = get_tree().get_first_node_in_group("player") as Node3D
 
 
 func _physics_process(delta: float) -> void:
@@ -32,7 +32,7 @@ func _physics_process(delta: float) -> void:
 		_attack_cooldown -= delta
 
 	if _player == null or not is_instance_valid(_player):
-		_player = get_tree().get_first_node_in_group("player")
+		_player = get_tree().get_first_node_in_group("player") as Node3D
 
 	if _player:
 		var to_player := _player.global_position - global_position
@@ -56,7 +56,7 @@ func _try_attack() -> void:
 	if _attack_cooldown > 0.0:
 		return
 	_attack_cooldown = attack_interval
-	var hp := _player.get_node_or_null("Health")
+	var hp := _player.get_node_or_null("Health") as Health
 	if hp:
 		hp.take_damage(attack_damage)
 
@@ -68,7 +68,6 @@ func _face(target: Vector3) -> void:
 
 
 func _on_died() -> void:
-	var session := get_node_or_null("/root/GameSession")
-	if session and session.has_method("report_kill"):
-		session.report_kill()
+	# GameSession is an autoload (registered in project.godot).
+	GameSession.report_kill()
 	queue_free()

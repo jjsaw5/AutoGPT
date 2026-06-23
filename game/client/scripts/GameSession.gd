@@ -17,7 +17,6 @@ func report_kill() -> void:
 	kills += 1
 	kills_changed.emit(kills)
 
-	var api := get_node_or_null("/root/Api")
-	if api and character_id != "":
-		api.report_event(character_id, "enemy_killed",
-			func(_r): pass)
+	# Api is an autoload; only call out when we have a character to attribute to.
+	if character_id != "":
+		Api.report_event(character_id, "enemy_killed", func(_r): pass)
