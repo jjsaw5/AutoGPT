@@ -17,6 +17,10 @@ It runs as **three independent, chainable stages** rather than one merged list:
 `all` runs all three in one pass. Each stage can be saved to JSON and the
 social list can be reused later (`combined --from-file`) instead of re-scanning.
 
+For a detailed, step-by-step walkthrough of exactly what each stage does
+(filters, formulas, current default values, and where to change them), see
+[`docs/WORKFLOW.md`](docs/WORKFLOW.md).
+
 Tracked subreddits: `r/wallstreetbets`, `r/pennystocks`, `r/Shortsqueeze`,
 `r/SqueezePlays`, `r/SPACs`, `r/Daytrading` (all via ApeWisdom, no credentials
 needed — see "Social data source" below for how this list was chosen and the
