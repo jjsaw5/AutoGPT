@@ -26,10 +26,22 @@
 2. NO TIME-STOP — earnings CLEAN (ER 9/1, after 8/21 expiry).
 3. THESIS EXIT: close if NIO reclaims 50-DMA (~$5.68).
 
+## JD long put  [OPENED 2026-06-30 — scanner, clean no-override entry]
+- Contract: JD 2026-08-21 $26.00 PUT (long_put)
+- Qty: 1 | Fill: $1.78 | Cost: $178.04 incl fees | MAX LOSS = $178.04
+- Open order id: 6a43dcb8-7854-4417-be8c-17cfb5e152d1 (filled, settle 7/1)
+- option_id: 99e44e8d-bd0d-4440-91fb-addef7f24653
+- Thesis: JD weak (death cross, below DMAs, neg rel-strength). Score 12.54.
+- Gates: delta -0.515, OI 1481, spread 2.8%, IV 40%. NO overrides needed (cleanest entry yet).
+### EXITS
+1. TAKE-PROFIT (resting): GTC sell_to_close @ $3.55 (+100%) — order 6a43dcce-18bf-44f8-a041-c1a7bd759116
+2. TIME-STOP (MONITORED, DATE): CLOSE ON/BEFORE 2026-08-11 (2d before ER 8/13).
+3. THESIS EXIT: close if JD reclaims 50-DMA.
+
 ## CAP USAGE
-- Open puts: 2 / 5 (MAX_OPEN). New today: 0 / 3.
-- PUT sleeve used: BILI $173 + NIO $48 = $221 / $400  ->  ROOM = $179.
-- A 3rd put must be <= ~$179 premium to stay under the $400 sleeve cap.
+- Open puts: 3 / 5 (MAX_OPEN). New today: 1 / 3.
+- PUT sleeve used: BILI $173 + NIO $48 + JD $178 = $399 / $400  ->  ROOM = ~$1 (MAXED).
+- Sleeve effectively FULL — no further puts until one closes.
 
 ## REMAINING EQUITY (not liquidated): MRK, MA, JPM, V, KO, AMD
 
