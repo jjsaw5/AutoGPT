@@ -1,8 +1,11 @@
 """Thin wrapper over the Financial Modeling Prep REST API.
 
 Only the endpoints the scanner needs are implemented:
-  * stock screener  -> defines the candidate universe
-  * batch quote     -> enriches with 50/200d averages, 52w high/low, volume
+  * company screener -> defines the candidate universe
+  * quote            -> enriches with 50/200d averages, 52w high/low, volume
+
+Uses the current /stable endpoints; FMP retired the legacy /api/v3 endpoints
+(including batch quote) in 2025, so quotes are fetched one symbol per request.
 
 Docs: https://site.financialmodelingprep.com/developer/docs
 """
@@ -10,7 +13,8 @@ Docs: https://site.financialmodelingprep.com/developer/docs
 from __future__ import annotations
 
 import logging
-from typing import Dict, Iterable, List
+import time
+from typing import Dict, List
 
 import requests
 
@@ -34,7 +38,7 @@ class FMPClient:
         self.cfg = config
         self.session = session or requests.Session()
 
-    def _get(self, path: str, params: Dict[str, object]) -> object:
+    def _get(self, path: str, params: Dict[str, object], retry_429: bool = True) -> object:
         params = {**params, "apikey": self.cfg.fmp_api_key}
         url = f"{self.cfg.fmp_base_url}/{path.lstrip('/')}"
         resp = self.session.get(url, params=params, timeout=30)
@@ -44,6 +48,10 @@ class FMPClient:
             raise FMPError(
                 "FMP returned 403 — this endpoint likely needs a paid plan."
             )
+        if resp.status_code == 429 and retry_429:
+            log.warning("FMP rate limit hit, backing off 2s and retrying once")
+            time.sleep(2)
+            return self._get(path, params, retry_429=False)
         resp.raise_for_status()
         data = resp.json()
         if isinstance(data, dict) and data.get("Error Message"):
@@ -65,7 +73,7 @@ class FMPClient:
             "exchange": ",".join(e.strip() for e in t.exchanges),
             "limit": 2000,
         }
-        rows = self._get("stock-screener", params)
+        rows = self._get("company-screener", params)
         if not isinstance(rows, list):
             raise FMPError(f"Unexpected screener response: {type(rows)!r}")
 
@@ -92,26 +100,42 @@ class FMPClient:
     def enrich_quotes(self, candidates: List[StockCandidate]) -> None:
         """Populate 50/200d averages, 52w range and live volume in-place.
 
-        FMP's batch quote endpoint accepts comma-separated symbols. We chunk to
-        keep URLs sane.
+        /stable/quote only accepts one symbol per request on current plans, so
+        this issues one call per candidate. To bound runtime on a broad screen,
+        only the ``fmp_enrich_limit`` candidates with the smallest market cap
+        are enriched (that's the part of the universe this tool cares about);
+        the rest keep their screener-only data and simply score 0 on momentum.
         """
-        by_symbol = {c.symbol: c for c in candidates}
-        for chunk in _chunks(list(by_symbol), 100):
-            data = self._get(f"quote/{','.join(chunk)}", {})
-            if not isinstance(data, list):
+        ordered = sorted(candidates, key=lambda c: c.market_cap)
+        limit = self.cfg.fmp_enrich_limit
+        to_enrich, skipped = ordered[:limit], ordered[limit:]
+        if skipped:
+            log.warning(
+                "FMP_ENRICH_LIMIT=%d reached — %d of %d candidates will not get "
+                "momentum data (smallest-market-cap names were prioritized). "
+                "Raise FMP_ENRICH_LIMIT or tighten MARKET_CAP_MAX/PRICE_MAX to "
+                "cover the rest.",
+                limit, len(skipped), len(candidates),
+            )
+
+        for i, c in enumerate(to_enrich):
+            try:
+                data = self._get("quote", {"symbol": c.symbol})
+            except FMPError as exc:
+                log.debug("quote enrichment failed for %s: %s", c.symbol, exc)
                 continue
-            for q in data:
-                c = by_symbol.get(str(q.get("symbol", "")).upper())
-                if not c:
-                    continue
-                c.price = float(q.get("price") or c.price)
-                c.volume = float(q.get("volume") or c.volume)
-                c.avg_volume = float(q.get("avgVolume") or c.avg_volume)
-                c.year_high = _f(q.get("yearHigh"))
-                c.year_low = _f(q.get("yearLow"))
-                c.price_avg_50 = _f(q.get("priceAvg50"))
-                c.price_avg_200 = _f(q.get("priceAvg200"))
-                c.change_pct = _f(q.get("changesPercentage"))
+            if not isinstance(data, list) or not data:
+                continue
+            q = data[0]
+            c.price = float(q.get("price") or c.price)
+            c.volume = float(q.get("volume") or c.volume)
+            c.year_high = _f(q.get("yearHigh"))
+            c.year_low = _f(q.get("yearLow"))
+            c.price_avg_50 = _f(q.get("priceAvg50"))
+            c.price_avg_200 = _f(q.get("priceAvg200"))
+            c.change_pct = _f(q.get("changePercentage"))
+            if (i + 1) % 50 == 0:
+                log.info("enriched %d/%d quotes", i + 1, len(to_enrich))
 
 
 def _f(v: object):
@@ -119,8 +143,3 @@ def _f(v: object):
         return float(v)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
-
-
-def _chunks(seq: List[str], n: int) -> Iterable[List[str]]:
-    for i in range(0, len(seq), n):
-        yield seq[i : i + n]

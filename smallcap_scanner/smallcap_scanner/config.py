@@ -69,8 +69,15 @@ class Config:
     fmp_api_key: str = field(default_factory=lambda: os.getenv("FMP_API_KEY", ""))
     fmp_base_url: str = field(
         default_factory=lambda: os.getenv(
-            "FMP_BASE_URL", "https://financialmodelingprep.com/api/v3"
+            "FMP_BASE_URL", "https://financialmodelingprep.com/stable"
         )
+    )
+    # FMP's legacy /api/v3 endpoints (incl. batch quote) were retired; current
+    # plans only expose single-symbol /stable/quote. This bounds how many
+    # screener hits get the extra per-symbol enrichment call (50/200d avg,
+    # 52w range) so a broad screen doesn't turn into thousands of requests.
+    fmp_enrich_limit: int = field(
+        default_factory=lambda: _get_int("FMP_ENRICH_LIMIT", 300)
     )
 
     reddit_client_id: str = field(
