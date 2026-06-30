@@ -14,8 +14,8 @@ It blends three signals into one ranked list:
 | **Momentum** | FMP quotes (50/200d avg, 52w range, volume) | Is it grinding *up* on *rising* volume? |
 | **Social** | Reddit (PRAW) | Is retail attention building across the tracked subreddits? |
 
-Tracked subreddits (configurable): `r/TheRaceTo10Million`, `r/raceto10000`,
-`r/smallstreetbets`, `r/pennystocks`.
+Tracked subreddits (configurable): `r/wallstreetbets`, `r/TheRaceTo10Million`,
+`r/raceto10000`, `r/smallstreetbets`, `r/pennystocks`.
 
 > ⚠️ **Read this first.** Reddit-driven penny stocks are *overwhelmingly*
 > pump-and-dumps. The SLS-style 10x is **survivorship bias** — for every one,

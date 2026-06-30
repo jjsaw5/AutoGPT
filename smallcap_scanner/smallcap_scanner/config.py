@@ -29,8 +29,9 @@ def _get_int(name: str, default: int) -> int:
     return int(raw) if raw not in (None, "") else default
 
 
-# The four subreddits the user asked to track, plus room to extend via env.
+# The subreddits tracked by default, plus room to extend via env.
 DEFAULT_SUBREDDITS = [
+    "wallstreetbets",
     "TheRaceTo10Million",
     "raceto10000",
     "smallstreetbets",
