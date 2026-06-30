@@ -33,7 +33,8 @@
 
 ## REMAINING EQUITY (not liquidated): MRK, MA, JPM, V, KO, AMD
 
-## PENDING / NOT FILLED
-- CPRT 2026-08-21 $30 PUT, limit $2.15 (order 6a43d702-a2c1-4a52-a21f-21e18d46d79d)
-  RESTING but stale (below market; mark drifted to ~$2.28). BREACHES the $400 put
-  sleeve ($221 + $215 = $436). Needs explicit sleeve override OR cancel. See chat.
+## CANCELLED (not filled)
+- CPRT 2026-08-21 $30 PUT, limit $2.15 (order 6a43d702-...) — CANCELLED 2026-06-30,
+  0 filled. Reason: would have breached the $400 put sleeve ($221+$215=$436), entry
+  drifted (delta -0.69, chase to ~$2.30), ~73% concentration. Not worth chasing.
+  Sleeve stays $221/$400 (BILI+NIO). Watch for a cleaner candidate <= ~$179.
