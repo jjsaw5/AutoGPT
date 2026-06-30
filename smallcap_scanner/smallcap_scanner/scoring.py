@@ -117,6 +117,9 @@ def score_social(reddit: Optional[RedditSignal]) -> tuple[float, list[str]]:
         reasons.append(f"seen in {len(reddit.subreddits)} subreddits")
 
     # Organic discussion (many distinct authors) beats one person spamming.
+    # When author data isn't available (ApeWisdom), author_diversity reads as
+    # a neutral 1.0 — the full bonus applies rather than penalizing a ticker
+    # just because that source doesn't expose post-level authorship.
     score += 20 * _clamp(reddit.author_diversity, 0, 1)
 
     # Engagement.
@@ -137,7 +140,10 @@ def risk_flags(
     if stock.change_pct is not None and stock.change_pct > 25:
         flags.append("ALREADY_PARABOLIC_TODAY (chasing risk)")
 
-    if reddit and reddit.mentions_total >= 4:
+    # Author-diversity checks only mean something for providers that expose
+    # per-post authorship (RSS, PRAW) — aggregate-only sources like ApeWisdom
+    # don't carry the data needed to tell organic buzz from one spammer.
+    if reddit and reddit.author_diversity_known and reddit.mentions_total >= 4:
         if reddit.author_diversity < 0.4:
             flags.append("LOW_AUTHOR_DIVERSITY (possible coordinated pump)")
         # A burst that is almost entirely "recent" with few authors looks seeded.

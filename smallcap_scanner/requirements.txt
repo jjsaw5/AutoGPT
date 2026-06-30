@@ -1,5 +1,7 @@
 requests>=2.31
-praw>=7.7
 python-dotenv>=1.0
+# only needed for REDDIT_MODE=praw (official OAuth path); not required by
+# the default auto mode (ApeWisdom + RSS)
+praw>=7.7
 # dev / test
 pytest>=7.4

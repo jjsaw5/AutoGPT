@@ -13,20 +13,35 @@ def test_low_diversity_triggers_pump_flag():
     reddit = RedditSignal(
         symbol="PMPD", mentions_total=4, mentions_recent=4,
         unique_authors=1, upvotes_sum=10, subreddits=["pennystocks"],
+        author_diversity_known=True,
     )
     flags = scoring.risk_flags(stock, reddit, _cfg())
     assert any("coordinated pump" in f for f in flags)
     assert any("SUB_$1" in f for f in flags)
 
 
+def test_unknown_author_diversity_does_not_trigger_pump_flag():
+    # ApeWisdom-style signal: no per-author data, so the pump heuristic
+    # must not fire just because unique_authors defaults to 0.
+    stock = StockCandidate(symbol="MEME", price=2.0, avg_volume=1_000_000)
+    reddit = RedditSignal(
+        symbol="MEME", mentions_total=50, mentions_recent=20, upvotes_sum=900,
+        subreddits=["wallstreetbets"], providers=["apewisdom"],
+    )
+    flags = scoring.risk_flags(stock, reddit, _cfg())
+    assert not any("pump" in f.lower() for f in flags)
+    assert not any("SEEDED" in f for f in flags)
+
+
 def test_organic_discussion_scores_higher_than_spam():
     organic = RedditSignal(
         symbol="AAA", mentions_total=6, mentions_recent=6, unique_authors=6,
         upvotes_sum=800, subreddits=["pennystocks", "smallstreetbets"],
+        author_diversity_known=True,
     )
     spam = RedditSignal(
         symbol="BBB", mentions_total=6, mentions_recent=6, unique_authors=1,
-        upvotes_sum=10, subreddits=["pennystocks"],
+        upvotes_sum=10, subreddits=["pennystocks"], author_diversity_known=True,
     )
     organic_score, _ = scoring.score_social(organic)
     spam_score, _ = scoring.score_social(spam)

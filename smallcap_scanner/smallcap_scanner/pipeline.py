@@ -21,11 +21,13 @@ def run_scan(
     """Return ranked candidates. ``mock=True`` uses bundled offline data."""
     if mock:
         from .mock_data import mock_stocks, MOCK_POSTS
-        from .reddit_client import aggregate_from_posts
+        from .reddit_aggregate import aggregate_from_posts
 
         stocks = mock_stocks()
         known = set(stocks)
-        reddit = aggregate_from_posts(MOCK_POSTS, known, cfg.reddit_lookback_hours)
+        reddit = aggregate_from_posts(
+            MOCK_POSTS, known, cfg.reddit_lookback_hours, provider="mock"
+        )
     else:
         stocks = _load_universe(cfg)
         known = set(stocks)
@@ -52,15 +54,37 @@ def _load_universe(cfg: Config) -> Dict[str, StockCandidate]:
 def _load_social(
     cfg: Config, known: Set[str]
 ) -> Dict[str, RedditSignal]:
-    if not cfg.has_reddit:
-        log.warning(
-            "Reddit credentials not set — running fundamentals/momentum only. "
-            "Set REDDIT_CLIENT_ID/SECRET to enable the social layer."
-        )
-        return {}
-    from .reddit_client import RedditScanner
+    if cfg.reddit_mode == "praw":
+        if not cfg.has_reddit:
+            log.warning(
+                "REDDIT_MODE=praw but credentials are missing — running "
+                "fundamentals/momentum only. Set REDDIT_CLIENT_ID/SECRET, or "
+                "drop REDDIT_MODE to use the no-credential 'auto' mode."
+            )
+            return {}
+        from .reddit_client import RedditScanner
 
-    return RedditScanner(cfg).scan(known)
+        return RedditScanner(cfg).scan(known)
+
+    # "auto" mode: ApeWisdom (clean, no-auth, limited coverage) + RSS
+    # scraping (broader coverage, but outside Reddit's stated crawl policy —
+    # see reddit_rss_client.py for the tradeoff this involves).
+    from .apewisdom_client import ApeWisdomClient
+    from .reddit_rss_client import RedditRSSClient
+    from .reddit_aggregate import merge_signals
+
+    signal_maps = []
+    if cfg.apewisdom_subreddits:
+        try:
+            signal_maps.append(ApeWisdomClient(cfg).scan(known))
+        except Exception as exc:
+            log.warning("ApeWisdom scan failed: %s", exc)
+    if cfg.reddit_rss_subreddits:
+        try:
+            signal_maps.append(RedditRSSClient(cfg).scan(known))
+        except Exception as exc:
+            log.warning("Reddit RSS scan failed: %s", exc)
+    return merge_signals(*signal_maps) if signal_maps else {}
 
 
 # ---------------------------------------------------------------------------

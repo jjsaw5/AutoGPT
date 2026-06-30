@@ -12,10 +12,10 @@ It blends three signals into one ranked list:
 |-------|--------|------------------|
 | **Fundamental** | FMP screener + quotes | Cheap enough for leverage, small cap, liquid enough to have options |
 | **Momentum** | FMP quotes (50/200d avg, 52w range, volume) | Is it grinding *up* on *rising* volume? |
-| **Social** | Reddit (PRAW) | Is retail attention building across the tracked subreddits? |
+| **Social** | ApeWisdom + Reddit RSS (default) or PRAW OAuth | Is retail attention building across the tracked subreddits? |
 
-Tracked subreddits (configurable): `r/wallstreetbets`, `r/TheRaceTo10Million`,
-`r/raceto10000`, `r/smallstreetbets`, `r/pennystocks`.
+Tracked subreddits (configurable): `r/wallstreetbets`, `r/pennystocks`,
+`r/TheRaceTo10Million`, `r/raceto10000`, `r/smallstreetbets`.
 
 > ⚠️ **Read this first.** Reddit-driven penny stocks are *overwhelmingly*
 > pump-and-dumps. The SLS-style 10x is **survivorship bias** — for every one,
@@ -24,6 +24,23 @@ Tracked subreddits (configurable): `r/wallstreetbets`, `r/TheRaceTo10Million`,
 > (`LOW_AUTHOR_DIVERSITY`, `SUDDEN_SEEDED_SPIKE`) so a high score is never read
 > uncritically. It does **not** place trades. Do your own due diligence and
 > never risk money you can't lose.
+
+> ⚠️ **Reddit data source tradeoff — read before relying on this.** Reddit's
+> official Data API requires OAuth app registration, which wasn't available
+> when this was built. The default `REDDIT_MODE=auto` instead uses two
+> sources: [ApeWisdom](https://apewisdom.io/api/) (a free, licensed,
+> no-auth aggregator — fully clean) for `wallstreetbets`/`pennystocks`, and
+> **direct RSS scraping** for the three niche subs ApeWisdom doesn't track
+> (`TheRaceTo10Million`, `raceto10000`, `smallstreetbets`). Reddit's
+> `robots.txt` is `Disallow: /` for every path, including those RSS feeds —
+> they respond without an API key, but using them for sustained automated
+> polling is outside Reddit's stated crawl policy, not a sanctioned gray
+> area. It's rate-limited aggressively and can silently return partial data
+> on any given run. **The fully compliant alternative is `REDDIT_MODE=praw`**
+> with real OAuth credentials (see below) — use it if you can get API access,
+> since it reliably covers all five subreddits with no policy conflict.
+> See [`smallcap_scanner/reddit_rss_client.py`](smallcap_scanner/reddit_rss_client.py)
+> for the full reasoning.
 
 ## Quick start
 
@@ -48,15 +65,31 @@ GRND     2.40      54.1     ...     ...     ...      1      2.1
 PMPD     0.78      41.2     ...     ...     ...      4      27.5    SUB_$1...;LOW_AUTHOR_DIVERSITY (possible coordinated pump)
 ```
 
+Real (`--mock`-free) run against live data, no Reddit credentials needed
+(`REDDIT_MODE=auto`, the default):
+
+```
+TICKER   PRICE   SCORE   FUND   MOM    SOCIAL   RDT   FLAGS
+EDIT     3.24    63.3    84.5   75.0   38.6     1
+RR       2.11    51.5    92.4   15.0   48.3     1
+SOC      3.08    48.8    86.9   15.0   45.6     3
+AMC      1.90    47.1    79.7   0.0    57.9     2
+```
+
 ## Getting API keys
 
-- **FMP** (market data): https://site.financialmodelingprep.com/developer/docs —
-  the `/stock-screener` endpoint is used to build the universe. A paid tier is
-  needed for full screener access; the free tier is rate-limited.
-- **Reddit** (social): https://www.reddit.com/prefs/apps → *create app* → type
-  **script**. Use the client id + secret. No user login is required (read-only).
+- **FMP** (market data, required): https://site.financialmodelingprep.com/developer/docs
+  — the `/stable/company-screener` endpoint builds the universe and
+  `/stable/quote` enriches it. FMP retired the legacy `/api/v3` endpoints
+  (including batch quote) in 2025; this tool already targets `/stable` and
+  fetches quotes one symbol per request since batch isn't available on
+  every plan tier.
+- **Reddit** (social, optional): nothing to set up by default — `auto` mode
+  uses ApeWisdom (no signup) plus RSS scraping. To switch to the fully
+  compliant OAuth path instead, set `REDDIT_MODE=praw` and create a
+  "script" app at https://www.reddit.com/prefs/apps for the client id/secret.
 
-Put them in `.env` (see `.env.example`). All thresholds and score weights are
+Put keys in `.env` (see `.env.example`). All thresholds and score weights are
 env-configurable too.
 
 ## CLI
@@ -116,15 +149,18 @@ pytest -q
 
 ```
 smallcap_scanner/
-  __main__.py        CLI entry point
-  config.py          env-driven config + thresholds
-  models.py          dataclasses passed between stages
-  fmp_client.py      FMP screener + quote wrapper
-  reddit_client.py   PRAW scan + pure aggregation helper
-  ticker_extract.py  cashtag/bare-ticker parsing with stopwords
-  scoring.py         sub-scores, composite, risk flags
-  pipeline.py        orchestration + table formatting
-  mock_data.py       offline sample data
+  __main__.py           CLI entry point
+  config.py             env-driven config + thresholds
+  models.py             dataclasses passed between stages
+  fmp_client.py         FMP /stable screener + quote wrapper
+  apewisdom_client.py   no-auth ApeWisdom mention/upvote aggregator
+  reddit_rss_client.py  RSS scraper for subs ApeWisdom doesn't cover (see ToS note)
+  reddit_client.py      PRAW OAuth scan — the fully compliant alternative
+  reddit_aggregate.py   shared post-aggregation + multi-provider merge logic
+  ticker_extract.py     cashtag/bare-ticker parsing with stopwords
+  scoring.py            sub-scores, composite, risk flags
+  pipeline.py           orchestration + table formatting
+  mock_data.py          offline sample data
 docs/robinhood_validation.md   how to validate LEAPS chains via Robinhood MCP
 tests/               unit tests (no network)
 ```

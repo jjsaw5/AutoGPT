@@ -49,22 +49,37 @@ class StockCandidate:
 
 @dataclass
 class RedditSignal:
-    """Aggregated mentions of a single ticker across the tracked subreddits."""
+    """Aggregated mentions of a single ticker across the tracked subreddits.
+
+    Sourced from one or more providers (see ``providers``). Providers differ
+    in what they expose: per-post scrapers (RSS) know who posted what, so
+    author-diversity checks are meaningful; aggregate APIs (ApeWisdom) only
+    give ticker-level mention/upvote totals with no author breakdown. Mixing
+    both without tracking that distinction would make every ApeWisdom-only
+    ticker look like a single-author pump — so ``author_diversity_known``
+    gates whether the diversity-based score/flags apply at all.
+    """
 
     symbol: str
     mentions_total: int = 0
-    mentions_recent: int = 0  # within the lookback window
+    mentions_recent: int = 0  # net-new mentions within the lookback window
     unique_authors: int = 0
     upvotes_sum: int = 0
     subreddits: List[str] = field(default_factory=list)
     sample_titles: List[str] = field(default_factory=list)
+    providers: List[str] = field(default_factory=list)
+    author_diversity_known: bool = False
 
     @property
     def author_diversity(self) -> float:
         """Unique authors / total mentions. Low values (one person posting a
-        ticker many times) are a coordinated-pump red flag, not a green light."""
-        if self.mentions_total <= 0:
-            return 0.0
+        ticker many times) are a coordinated-pump red flag, not a green light.
+
+        Returns 1.0 (neutral — neither rewarded nor flagged) when the source
+        data doesn't include per-author breakdown.
+        """
+        if not self.author_diversity_known or self.mentions_total <= 0:
+            return 1.0
         return self.unique_authors / self.mentions_total
 
 
@@ -97,7 +112,8 @@ class ScoredCandidate:
             else None,
             "reddit_mentions": r.mentions_total if r else 0,
             "reddit_recent": r.mentions_recent if r else 0,
-            "reddit_authors": r.unique_authors if r else 0,
+            "reddit_authors": r.unique_authors if (r and r.author_diversity_known) else None,
+            "reddit_sources": ",".join(r.providers) if r else "",
             "fund_score": round(self.fundamental_score, 1),
             "mom_score": round(self.momentum_score, 1),
             "social_score": round(self.social_score, 1),
