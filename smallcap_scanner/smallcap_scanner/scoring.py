@@ -1,0 +1,198 @@
+"""Turn raw candidate + social data into a ranked, explained score.
+
+Three sub-scores on a 0-100 scale:
+  * fundamental — is this the right *kind* of stock (cheap, small, liquid)?
+  * momentum    — is it grinding up on rising volume (the SLS pattern)?
+  * social      — is retail attention building on the tracked subreddits?
+
+The composite is a weighted blend. Crucially, ``flags`` surface *risks*
+(coordinated-pump signatures, sub-penny delisting risk, already-parabolic) so a
+high score is never read uncritically.
+"""
+
+from __future__ import annotations
+
+import math
+from typing import Dict, Optional
+
+from .config import Config
+from .models import RedditSignal, ScoredCandidate, StockCandidate
+
+
+def _clamp(v: float, lo: float = 0.0, hi: float = 100.0) -> float:
+    return max(lo, min(hi, v))
+
+
+def _scale_log(value: float, full_at: float) -> float:
+    """Map ``value`` to 0-100 on a log curve, reaching ~100 near ``full_at``."""
+    if value <= 0:
+        return 0.0
+    return _clamp(100.0 * math.log1p(value) / math.log1p(full_at))
+
+
+def score_fundamental(stock: StockCandidate, cfg: Config) -> tuple[float, list[str]]:
+    t = cfg.thresholds
+    reasons: list[str] = []
+    score = 0.0
+
+    # Lower price within the band => more call leverage potential. Linear from
+    # 40 pts at price_max down-weight to 100 pts at price_min.
+    span = max(t.price_max - t.price_min, 1e-9)
+    price_pos = (t.price_max - stock.price) / span  # 1 at the cheap end
+    price_pts = 40 + 60 * _clamp(price_pos, 0, 1)
+    score += 0.5 * price_pts
+    if stock.price <= (t.price_min + span * 0.4):
+        reasons.append(f"low price ${stock.price:.2f} → high option leverage")
+
+    # Liquidity: reward volume well above the floor (log up to ~10x floor).
+    liq = _scale_log(stock.avg_volume, t.avg_volume_min * 10)
+    score += 0.3 * liq
+    if stock.avg_volume >= t.avg_volume_min * 3:
+        reasons.append(f"liquid: {stock.avg_volume/1e6:.1f}M avg vol")
+
+    # Market cap sweet spot: avoid the very bottom (junk) and the very top.
+    if t.market_cap_max > t.market_cap_min:
+        mc_pos = (stock.market_cap - t.market_cap_min) / (
+            t.market_cap_max - t.market_cap_min
+        )
+        # peak reward around the lower-middle of the band
+        mc_pts = 100 * math.exp(-((_clamp(mc_pos, 0, 1) - 0.25) ** 2) / 0.08)
+        score += 0.2 * mc_pts
+
+    return _clamp(score), reasons
+
+
+def score_momentum(stock: StockCandidate) -> tuple[float, list[str]]:
+    reasons: list[str] = []
+    if stock.price_avg_50 is None and stock.price_avg_200 is None:
+        return 0.0, reasons
+
+    score = 0.0
+    if stock.price_avg_50 and stock.price > stock.price_avg_50:
+        score += 25
+        reasons.append("above 50d avg")
+    if stock.price_avg_200 and stock.price > stock.price_avg_200:
+        score += 20
+        reasons.append("above 200d avg")
+    if (
+        stock.price_avg_50
+        and stock.price_avg_200
+        and stock.price_avg_50 > stock.price_avg_200
+    ):
+        score += 15
+        reasons.append("50d > 200d (uptrend)")
+
+    surge = stock.volume_surge
+    if surge and surge > 1.2:
+        score += _clamp(20 * math.log1p(surge - 1) / math.log1p(4), 0, 25)
+        reasons.append(f"volume {surge:.1f}x average")
+
+    # Off the lows but with room left to the highs == early in the move.
+    above_low = stock.pct_above_year_low
+    below_high = stock.pct_below_year_high
+    if above_low is not None and below_high is not None:
+        if above_low > 20 and below_high > 25:
+            score += 15
+            reasons.append(
+                f"+{above_low:.0f}% off 52w low, still {below_high:.0f}% below high"
+            )
+
+    return _clamp(score), reasons
+
+
+def score_social(reddit: Optional[RedditSignal]) -> tuple[float, list[str]]:
+    if not reddit or reddit.mentions_total == 0:
+        return 0.0, []
+    reasons: list[str] = []
+    score = 0.0
+
+    # Recent mention volume (log, ~saturates around 25 recent mentions).
+    score += 0.5 * _scale_log(reddit.mentions_recent, 25)
+    if reddit.mentions_recent >= 3:
+        reasons.append(f"{reddit.mentions_recent} recent mentions")
+
+    # Cross-subreddit spread is a stronger organic signal than one echo chamber.
+    if len(reddit.subreddits) >= 2:
+        score += 15
+        reasons.append(f"seen in {len(reddit.subreddits)} subreddits")
+
+    # Organic discussion (many distinct authors) beats one person spamming.
+    score += 20 * _clamp(reddit.author_diversity, 0, 1)
+
+    # Engagement.
+    score += 0.15 * _scale_log(reddit.upvotes_sum, 500)
+
+    return _clamp(score), reasons
+
+
+def risk_flags(
+    stock: StockCandidate, reddit: Optional[RedditSignal], cfg: Config
+) -> list[str]:
+    flags: list[str] = []
+
+    if stock.price < 1.0:
+        flags.append("SUB_$1 (delisting/illiquid-options risk)")
+    if stock.avg_volume < cfg.thresholds.avg_volume_min:
+        flags.append("THIN_VOLUME")
+    if stock.change_pct is not None and stock.change_pct > 25:
+        flags.append("ALREADY_PARABOLIC_TODAY (chasing risk)")
+
+    if reddit and reddit.mentions_total >= 4:
+        if reddit.author_diversity < 0.4:
+            flags.append("LOW_AUTHOR_DIVERSITY (possible coordinated pump)")
+        # A burst that is almost entirely "recent" with few authors looks seeded.
+        if (
+            reddit.mentions_recent == reddit.mentions_total
+            and reddit.unique_authors <= 2
+        ):
+            flags.append("SUDDEN_SEEDED_SPIKE")
+
+    return flags
+
+
+def score_candidate(
+    stock: StockCandidate, reddit: Optional[RedditSignal], cfg: Config
+) -> ScoredCandidate:
+    f_score, f_reasons = score_fundamental(stock, cfg)
+    m_score, m_reasons = score_momentum(stock)
+    s_score, s_reasons = score_social(reddit)
+
+    wsum = cfg.weight_fundamental + cfg.weight_momentum + cfg.weight_social
+    wsum = wsum or 1.0
+    composite = (
+        cfg.weight_fundamental * f_score
+        + cfg.weight_momentum * m_score
+        + cfg.weight_social * s_score
+    ) / wsum
+
+    return ScoredCandidate(
+        symbol=stock.symbol,
+        stock=stock,
+        reddit=reddit,
+        fundamental_score=f_score,
+        momentum_score=m_score,
+        social_score=s_score,
+        composite_score=composite,
+        reasons=f_reasons + m_reasons + s_reasons,
+        flags=risk_flags(stock, reddit, cfg),
+    )
+
+
+def rank(
+    stocks: Dict[str, StockCandidate],
+    reddit: Dict[str, RedditSignal],
+    cfg: Config,
+    require_social: bool = False,
+) -> list[ScoredCandidate]:
+    """Score every stock and return them sorted by composite score, desc.
+
+    If ``require_social`` is set, only stocks with at least one Reddit mention
+    are returned (the "what is retail actually talking about" view)."""
+    out: list[ScoredCandidate] = []
+    for sym, stock in stocks.items():
+        sig = reddit.get(sym)
+        if require_social and not sig:
+            continue
+        out.append(score_candidate(stock, sig, cfg))
+    out.sort(key=lambda c: c.composite_score, reverse=True)
+    return out
