@@ -1,9 +1,26 @@
-"""Orchestrate a full scan: universe -> enrich -> social -> rank."""
+"""Three independent, chainable scan stages.
+
+1. scan_fundamentals — FMP screener + quotes only. "What does the market
+   data say is a small-cap, optionable, grinding-up prospect?" No social
+   input at all.
+2. scan_social       — ApeWisdom (or PRAW) only. "What tickers are actually
+   heating up on the tracked subreddits right now?" No FMP filtering — this
+   can surface tickers stage 1 never saw (wrong price/cap band, or simply
+   not in the screener's universe).
+3. scan_combined     — takes a stage-2 result, looks up exactly those
+   tickers via FMP, and re-scores them with the full fundamental + momentum
+   + social blend. This is the "now that we know what's trending, what does
+   the market data say about it" pass.
+
+Each stage returns plain data (List[ScoredCandidate] or List[RedditSignal])
+that the CLI can print, save to JSON, and/or feed into the next stage.
+"""
 
 from __future__ import annotations
 
+import dataclasses
 import logging
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 from .config import Config
 from .models import RedditSignal, ScoredCandidate, StockCandidate
@@ -12,28 +29,21 @@ from . import scoring
 log = logging.getLogger(__name__)
 
 
-def run_scan(
-    cfg: Config,
-    mock: bool = False,
-    require_social: bool = False,
-    top_n: Optional[int] = 25,
+# ---------------------------------------------------------------------------
+# Stage 1: FMP-only fundamentals/momentum scan
+# ---------------------------------------------------------------------------
+
+def scan_fundamentals(
+    cfg: Config, mock: bool = False, top_n: Optional[int] = 25
 ) -> List[ScoredCandidate]:
-    """Return ranked candidates. ``mock=True`` uses bundled offline data."""
     if mock:
-        from .mock_data import mock_stocks, MOCK_POSTS
-        from .reddit_aggregate import aggregate_from_posts
+        from .mock_data import mock_stocks
 
         stocks = mock_stocks()
-        known = set(stocks)
-        reddit = aggregate_from_posts(
-            MOCK_POSTS, known, cfg.reddit_lookback_hours, provider="mock"
-        )
     else:
         stocks = _load_universe(cfg)
-        known = set(stocks)
-        reddit = _load_social(cfg, known)
 
-    ranked = scoring.rank(stocks, reddit, cfg, require_social=require_social)
+    ranked = scoring.rank_fmp_only(stocks, cfg)
     return ranked[:top_n] if top_n else ranked
 
 
@@ -51,40 +61,120 @@ def _load_universe(cfg: Config) -> Dict[str, StockCandidate]:
     return stocks
 
 
-def _load_social(
-    cfg: Config, known: Set[str]
-) -> Dict[str, RedditSignal]:
+# ---------------------------------------------------------------------------
+# Stage 2: raw social discovery (no FMP filtering)
+# ---------------------------------------------------------------------------
+
+def scan_social(
+    cfg: Config, mock: bool = False, top_n: Optional[int] = None
+) -> List[RedditSignal]:
+    """Return tickers trending on the tracked subreddits, regardless of
+    whether they'd pass the fundamental screen.
+
+    Sorted by net-new mentions (the "heating up right now" signal) with total
+    mentions as a tiebreaker.
+    """
+    if mock:
+        from .mock_data import MOCK_POSTS
+        from .reddit_aggregate import aggregate_from_posts
+
+        signals = aggregate_from_posts(
+            MOCK_POSTS, None, cfg.reddit_lookback_hours, provider="mock"
+        )
+    else:
+        signals = _load_social_raw(cfg)
+
+    ranked = sorted(
+        signals.values(),
+        key=lambda s: (s.mentions_recent, s.mentions_total),
+        reverse=True,
+    )
+    return ranked[:top_n] if top_n else ranked
+
+
+def _load_social_raw(cfg: Config) -> Dict[str, RedditSignal]:
     if cfg.reddit_mode == "praw":
         if not cfg.has_reddit:
             log.warning(
-                "REDDIT_MODE=praw but credentials are missing — running "
-                "fundamentals/momentum only. Set REDDIT_CLIENT_ID/SECRET, or "
-                "drop REDDIT_MODE to use the no-credential 'auto' mode."
+                "REDDIT_MODE=praw but credentials are missing — no social "
+                "data available. Set REDDIT_CLIENT_ID/SECRET, or drop "
+                "REDDIT_MODE to use the no-credential 'auto' mode."
             )
             return {}
         from .reddit_client import RedditScanner
 
-        return RedditScanner(cfg).scan(known)
+        return RedditScanner(cfg).scan(known_symbols=None)
 
-    # "auto" mode: ApeWisdom (clean, no-auth, limited coverage) + RSS
-    # scraping (broader coverage, but outside Reddit's stated crawl policy —
-    # see reddit_rss_client.py for the tradeoff this involves).
     from .apewisdom_client import ApeWisdomClient
-    from .reddit_rss_client import RedditRSSClient
-    from .reddit_aggregate import merge_signals
 
-    signal_maps = []
-    if cfg.apewisdom_subreddits:
-        try:
-            signal_maps.append(ApeWisdomClient(cfg).scan(known))
-        except Exception as exc:
-            log.warning("ApeWisdom scan failed: %s", exc)
-    if cfg.reddit_rss_subreddits:
-        try:
-            signal_maps.append(RedditRSSClient(cfg).scan(known))
-        except Exception as exc:
-            log.warning("Reddit RSS scan failed: %s", exc)
-    return merge_signals(*signal_maps) if signal_maps else {}
+    try:
+        return ApeWisdomClient(cfg).scan(known_symbols=None)
+    except Exception as exc:
+        log.warning("ApeWisdom scan failed: %s", exc)
+        return {}
+
+
+def dump_social(signals: List[RedditSignal]) -> List[dict]:
+    """Full-fidelity serialization for re-use as ``scan_combined``'s input
+    (e.g. via a saved JSON file) — preserves every field, unlike the display
+    row from ``format_social_table``."""
+    return [dataclasses.asdict(s) for s in signals]
+
+
+def load_social(rows: List[dict]) -> List[RedditSignal]:
+    return [RedditSignal(**row) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Stage 3: cross-reference a social list against FMP, full 3-way scoring
+# ---------------------------------------------------------------------------
+
+def scan_combined(
+    cfg: Config,
+    social: Optional[List[RedditSignal]] = None,
+    mock: bool = False,
+    social_limit: Optional[int] = None,
+    top_n: Optional[int] = 25,
+) -> List[ScoredCandidate]:
+    """Look up the top social tickers via FMP and score with the full blend.
+
+    If ``social`` isn't provided, runs a fresh ``scan_social`` first.
+    """
+    if social is None:
+        social = scan_social(cfg, mock=mock)
+
+    limit = social_limit if social_limit is not None else cfg.social_fmp_limit
+    top_social = social[:limit]
+    if len(social) > limit:
+        log.info(
+            "SOCIAL_FMP_LIMIT=%d — cross-referencing the top %d of %d trending "
+            "tickers by mention growth.",
+            limit, limit, len(social),
+        )
+    symbols = [s.symbol for s in top_social]
+
+    if mock:
+        from .mock_data import mock_quote_lookup
+
+        stocks = mock_quote_lookup(symbols)
+    else:
+        stocks = _quote_symbols(cfg, symbols)
+
+    reddit_map = {s.symbol: s for s in top_social}
+    ranked = scoring.rank(stocks, reddit_map, cfg)
+    return ranked[:top_n] if top_n else ranked
+
+
+def _quote_symbols(cfg: Config, symbols: List[str]) -> Dict[str, StockCandidate]:
+    from .fmp_client import FMPClient
+
+    if not symbols:
+        return {}
+    try:
+        return FMPClient(cfg).quote_symbols(symbols)
+    except Exception as exc:
+        log.warning("FMP quote lookup failed: %s", exc)
+        return {}
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +201,32 @@ def format_table(ranked: List[ScoredCandidate]) -> str:
         row = c.to_row()
         cells = []
         for key, _, w in _COLUMNS:
+            val = row.get(key)
+            val = "" if val is None else str(val)
+            cells.append(f"{val:<{w}}")
+        lines.append("  ".join(cells))
+    return "\n".join(lines)
+
+
+_SOCIAL_COLUMNS = [
+    ("symbol", "TICKER", 7),
+    ("mentions_total", "MENT", 6),
+    ("mentions_recent", "NEW", 5),
+    ("social_score", "SCORE", 6),
+    ("unique_authors", "AUTH", 5),
+    ("upvotes_sum", "UPVOTES", 8),
+    ("subreddits", "SUBREDDITS", 30),
+]
+
+
+def format_social_table(signals: List[RedditSignal]) -> str:
+    header = "  ".join(f"{title:<{w}}" for _, title, w in _SOCIAL_COLUMNS)
+    lines = [header, "-" * len(header)]
+    for sig in signals:
+        row = sig.to_row()
+        row["social_score"] = round(scoring.score_social(sig)[0], 1)
+        cells = []
+        for key, _, w in _SOCIAL_COLUMNS:
             val = row.get(key)
             val = "" if val is None else str(val)
             cells.append(f"{val:<{w}}")

@@ -73,8 +73,35 @@ MOCK_POSTS: List[dict] = [
     {"title": "PMPD squeeze incoming", "selftext": "$PMPD",
      "author": "spammer", "score": 1, "created_utc": _FUTURE,
      "subreddit": "pennystocks"},
+    # MOONX: mentioned a lot on social but never passed the FMP screen
+    # (price/cap outside the configured band) — exercises the stage-3
+    # "discovered via social, looked up directly via FMP quote" path.
+    {"title": "$MOONX breaking out, huge runner today",
+     "selftext": "everyone's talking about MOONX", "author": "trader1",
+     "score": 300, "created_utc": _FUTURE, "subreddit": "wallstreetbets"},
+    {"title": "MOONX DD - the next big short squeeze",
+     "selftext": "$MOONX short interest is massive", "author": "trader2",
+     "score": 180, "created_utc": _FUTURE, "subreddit": "Shortsqueeze"},
 ]
+
+# Quote-lookup data for stage 3 (social -> FMP cross-reference) in mock mode,
+# standing in for FMPClient.quote_symbols(). Covers every ticker mentioned in
+# MOCK_POSTS, including MOONX which is deliberately absent from MOCK_STOCKS.
+MOCK_QUOTES: Dict[str, StockCandidate] = {
+    s.symbol: s for s in MOCK_STOCKS
+}
+MOCK_QUOTES["MOONX"] = StockCandidate(
+    symbol="MOONX", name="Moonshot Co", price=42.50, market_cap=8_500_000_000,
+    volume=15_000_000, avg_volume=15_000_000, exchange="NASDAQ",
+    year_high=45.0, year_low=12.0, price_avg_50=30.0, price_avg_200=20.0,
+    change_pct=12.0,
+)
 
 
 def mock_stocks() -> Dict[str, StockCandidate]:
     return {s.symbol: s for s in MOCK_STOCKS}
+
+
+def mock_quote_lookup(symbols: List[str]) -> Dict[str, StockCandidate]:
+    """Stand-in for FMPClient.quote_symbols() in --mock runs."""
+    return {s: MOCK_QUOTES[s] for s in symbols if s in MOCK_QUOTES}

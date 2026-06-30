@@ -1,8 +1,8 @@
 """Shared aggregation logic: raw posts -> per-ticker RedditSignal.
 
-Used by both the RSS provider (real per-post data, author-diversity-aware)
-and the mock data set. Kept provider-agnostic so scoring never has to know
-where the posts came from.
+Used by the PRAW provider (real per-post data, author-diversity-aware) and
+the mock data set. Kept provider-agnostic so scoring never has to know where
+the posts came from.
 """
 
 from __future__ import annotations
@@ -56,48 +56,3 @@ def aggregate_from_posts(
     for sym, sig in signals.items():
         sig.unique_authors = len(authors.get(sym, ()))
     return signals
-
-
-def merge_signals(*signal_maps: Dict[str, RedditSignal]) -> Dict[str, RedditSignal]:
-    """Combine per-ticker signals from multiple providers.
-
-    Author-diversity counts are only meaningfully comparable within a single
-    provider's data, so when merging we sum the raw counts (a reasonable
-    approximation for ranking) but only mark the merged signal
-    ``author_diversity_known`` if every contributing source for that ticker
-    tracked authors — otherwise diversity-based scoring/flags stay neutral
-    rather than penalizing a ticker just because one of its sources doesn't
-    track authors.
-    """
-    merged: Dict[str, RedditSignal] = {}
-    for smap in signal_maps:
-        for sym, sig in smap.items():
-            m = merged.get(sym)
-            if m is None:
-                merged[sym] = RedditSignal(
-                    symbol=sym,
-                    mentions_total=sig.mentions_total,
-                    mentions_recent=sig.mentions_recent,
-                    unique_authors=sig.unique_authors,
-                    upvotes_sum=sig.upvotes_sum,
-                    subreddits=list(sig.subreddits),
-                    sample_titles=list(sig.sample_titles),
-                    providers=list(sig.providers),
-                    author_diversity_known=sig.author_diversity_known,
-                )
-                continue
-            m.mentions_total += sig.mentions_total
-            m.mentions_recent += sig.mentions_recent
-            m.unique_authors += sig.unique_authors
-            m.upvotes_sum += sig.upvotes_sum
-            for s in sig.subreddits:
-                if s not in m.subreddits:
-                    m.subreddits.append(s)
-            for t in sig.sample_titles:
-                if len(m.sample_titles) < 5:
-                    m.sample_titles.append(t)
-            for p in sig.providers:
-                if p not in m.providers:
-                    m.providers.append(p)
-            m.author_diversity_known = m.author_diversity_known and sig.author_diversity_known
-    return merged

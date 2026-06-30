@@ -6,16 +6,21 @@ low base) **that are also gaining traction on retail trading subreddits** — th
 profile of a stock that could support a long-dated (LEAPS) call play like the
 `SLS $1.5 Call` example.
 
-It blends three signals into one ranked list:
+It runs as **three independent, chainable stages** rather than one merged list:
 
-| Layer | Source | What it measures |
-|-------|--------|------------------|
-| **Fundamental** | FMP screener + quotes | Cheap enough for leverage, small cap, liquid enough to have options |
-| **Momentum** | FMP quotes (50/200d avg, 52w range, volume) | Is it grinding *up* on *rising* volume? |
-| **Social** | ApeWisdom + Reddit RSS (default) or PRAW OAuth | Is retail attention building across the tracked subreddits? |
+| Stage | Command | Source | Question it answers |
+|-------|---------|--------|----------------------|
+| 1. Fundamentals | `fundamentals` | FMP screener + quotes only | What does the market data alone say is a promising small-cap, optionable, grinding-up prospect? |
+| 2. Social | `social` | ApeWisdom only | What tickers are actually heating up on the tracked subreddits right now — regardless of whether they fit the small-cap profile? |
+| 3. Combined | `combined` | Stage 2's tickers, looked up via FMP | Now that we know what's trending, what does the fundamental/momentum data say about it? |
 
-Tracked subreddits (configurable): `r/wallstreetbets`, `r/pennystocks`,
-`r/TheRaceTo10Million`, `r/raceto10000`, `r/smallstreetbets`.
+`all` runs all three in one pass. Each stage can be saved to JSON and the
+social list can be reused later (`combined --from-file`) instead of re-scanning.
+
+Tracked subreddits: `r/wallstreetbets`, `r/pennystocks`, `r/Shortsqueeze`,
+`r/SqueezePlays`, `r/SPACs`, `r/Daytrading` (all via ApeWisdom, no credentials
+needed — see "Social data source" below for how this list was chosen and the
+option to reach more subreddits via official Reddit OAuth).
 
 > ⚠️ **Read this first.** Reddit-driven penny stocks are *overwhelmingly*
 > pump-and-dumps. The SLS-style 10x is **survivorship bias** — for every one,
@@ -25,22 +30,41 @@ Tracked subreddits (configurable): `r/wallstreetbets`, `r/pennystocks`,
 > uncritically. It does **not** place trades. Do your own due diligence and
 > never risk money you can't lose.
 
-> ⚠️ **Reddit data source tradeoff — read before relying on this.** Reddit's
-> official Data API requires OAuth app registration, which wasn't available
-> when this was built. The default `REDDIT_MODE=auto` instead uses two
-> sources: [ApeWisdom](https://apewisdom.io/api/) (a free, licensed,
-> no-auth aggregator — fully clean) for `wallstreetbets`/`pennystocks`, and
-> **direct RSS scraping** for the three niche subs ApeWisdom doesn't track
-> (`TheRaceTo10Million`, `raceto10000`, `smallstreetbets`). Reddit's
-> `robots.txt` is `Disallow: /` for every path, including those RSS feeds —
-> they respond without an API key, but using them for sustained automated
-> polling is outside Reddit's stated crawl policy, not a sanctioned gray
-> area. It's rate-limited aggressively and can silently return partial data
-> on any given run. **The fully compliant alternative is `REDDIT_MODE=praw`**
-> with real OAuth credentials (see below) — use it if you can get API access,
-> since it reliably covers all five subreddits with no policy conflict.
-> See [`smallcap_scanner/reddit_rss_client.py`](smallcap_scanner/reddit_rss_client.py)
-> for the full reasoning.
+## Social data source: ApeWisdom only
+
+Reddit's official Data API requires OAuth app registration, which wasn't
+available when this was built. Direct RSS scraping was tried as a stopgap but
+removed — Reddit's `robots.txt` is `Disallow: /` for every path, including
+those feeds, so it conflicted with Reddit's stated crawl policy and was
+rate-limited unreliably in practice.
+
+The default (`REDDIT_MODE=auto`) now uses only
+[ApeWisdom](https://apewisdom.io/api/) — a free, no-auth, licensed
+third-party aggregator with no scraping or ToS conflict. ApeWisdom tracks
+~17 subreddits total; this scanner uses six of them, chosen by checking each
+one's live data:
+
+- **Used**: `wallstreetbets`, `pennystocks` (the original ask), plus
+  `Shortsqueeze`, `SqueezePlays`, `SPACs`, `Daytrading` — added because
+  short-squeeze and SPAC communities skew toward exactly the small/micro-cap,
+  high-volatility profile this scanner targets, and Daytrading's top mentions
+  overlapped with names already surfacing from wallstreetbets/pennystocks.
+- **Deliberately excluded**: `stocks`, `investing`, `options`, `StockMarket`,
+  `WallStreetbetsELITE`, `Wallstreetbetsnew` — verified live and all are
+  dominated by mega-cap mentions (MSFT/AAPL/AMZN/SPY topped every one), which
+  would just dilute the small-cap signal.
+
+ApeWisdom doesn't track `TheRaceTo10Million`, `raceto10000`, or
+`smallstreetbets` — the only way to reach those is official Reddit OAuth.
+Set `REDDIT_MODE=praw` plus `REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET` (create
+a "script" app at https://www.reddit.com/prefs/apps) to use it; `subreddits`
+in `.env.example` lists the full original five for that mode.
+
+One caveat worth knowing: ApeWisdom does its own ticker detection server-side,
+so a handful of common short English words that also happen to be real
+tickers (`ALL` — Allstate, `BE` — Bloom Energy, `IT` — Gartner, `CC` —
+Chemours) can show up as noise in the `social` stage. The `combined` stage's
+fundamental/momentum data usually makes it obvious which of these are real.
 
 ## Quick start
 
@@ -49,32 +73,54 @@ cd smallcap_scanner
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Try it immediately on bundled sample data — no API keys needed:
-python -m smallcap_scanner --mock
+# Try all three stages on bundled sample data — no API keys needed:
+python -m smallcap_scanner all --mock
 
-# Real run: copy .env.example -> .env, add your keys, then:
-python -m smallcap_scanner --require-social --top 20
+# Real run: copy .env.example -> .env, add FMP_API_KEY (Reddit needs no key), then:
+python -m smallcap_scanner fundamentals --top 20      # stage 1
+python -m smallcap_scanner social --top 40             # stage 2
+python -m smallcap_scanner combined --top 20           # stage 3
 ```
 
-Example (`--mock`) output:
+Example stage-1 (`fundamentals --mock`) output:
 
 ```
 TICKER   PRICE     SCORE    FUND    MOM     SOCIAL   RDT    VOLx    FLAGS
-SLS      1.85      78.4     ...     ...     ...      3      3.7
-GRND     2.40      54.1     ...     ...     ...      1      2.1
-PMPD     0.78      41.2     ...     ...     ...      4      27.5    SUB_$1...;LOW_AUTHOR_DIVERSITY (possible coordinated pump)
+PMPD     0.78      85.0     84.9    85.0    0.0      0      27.5    SUB_$1...;ALREADY_PARABOLIC_TODAY
+SLS      1.85      81.3     86.5    76.1    0.0      0      3.67
+GRND     2.40      79.1     88.7    69.5    0.0      0      2.14
 ```
 
-Real (`--mock`-free) run against live data, no Reddit credentials needed
-(`REDDIT_MODE=auto`, the default):
+Example stage-2 (`social --mock`) output:
+
+```
+TICKER   MENT    NEW    SCORE   AUTH   UPVOTES   SUBREDDITS
+PMPD     4       4      35.7    1      11        pennystocks
+MOONX    2       2      66.8    2      480       wallstreetbets,Shortsqueeze
+SLS      1       1      45.6    1      540       pennystocks
+```
+
+Example stage-3 (`combined --mock`) output — note MOONX, which never passed
+the stage-1 screen, shown here with flags explaining why:
+
+```
+TICKER   PRICE     SCORE    FUND    MOM     SOCIAL   RDT    VOLx    FLAGS
+SLS      1.85      67.0     86.5    76.1    45.6     1      3.67
+PMPD     0.78      65.3     84.9    85.0    35.7     4      27.5    SUB_$1...;LOW_AUTHOR_DIVERSITY...
+MOONX    42.5      59.7     50.0    60.0    66.8     2      1.0     OUTSIDE_PRICE_RANGE;OUTSIDE_MARKET_CAP_RANGE
+```
+
+Real (no Reddit credentials needed) combined run against live data:
 
 ```
 TICKER   PRICE   SCORE   FUND   MOM    SOCIAL   RDT   FLAGS
-EDIT     3.24    63.3    84.5   75.0   38.6     1
-RR       2.11    51.5    92.4   15.0   48.3     1
-SOC      3.08    48.8    86.9   15.0   45.6     3
-AMC      1.90    47.1    79.7   0.0    57.9     2
+LINK     4.82    65.4    64.9   60.0   69.8     5     THIN_VOLUME
+KEEL     5.72    59.7    59.1   45.0   71.2     6     OUTSIDE_MARKET_CAP_RANGE
+UMAC     22.30   67.9    66.9   75.0   63.4     11    OUTSIDE_PRICE_RANGE
 ```
+(Most of the raw social list each run skews mega-cap — AMD, SPY, MSTR — which
+is why they show `OUTSIDE_PRICE_RANGE`/`OUTSIDE_MARKET_CAP_RANGE`; the
+small-cap-fitting names are the ones without those flags.)
 
 ## Getting API keys
 
@@ -85,9 +131,9 @@ AMC      1.90    47.1    79.7   0.0    57.9     2
   fetches quotes one symbol per request since batch isn't available on
   every plan tier.
 - **Reddit** (social, optional): nothing to set up by default — `auto` mode
-  uses ApeWisdom (no signup) plus RSS scraping. To switch to the fully
-  compliant OAuth path instead, set `REDDIT_MODE=praw` and create a
-  "script" app at https://www.reddit.com/prefs/apps for the client id/secret.
+  uses ApeWisdom, which needs no signup. See "Social data source" above for
+  the official-OAuth alternative if you want the niche subs ApeWisdom
+  doesn't track.
 
 Put keys in `.env` (see `.env.example`). All thresholds and score weights are
 env-configurable too.
@@ -95,21 +141,37 @@ env-configurable too.
 ## CLI
 
 ```
-python -m smallcap_scanner [--mock] [--require-social] [--top N] [--json] [--quiet]
+python -m smallcap_scanner fundamentals [--mock] [--top N] [--json] [--out FILE]
+python -m smallcap_scanner social       [--mock] [--top N] [--json] [--out FILE]
+python -m smallcap_scanner combined     [--mock] [--top N] [--json] [--out FILE]
+                                         [--from-file FILE] [--social-limit N]
+python -m smallcap_scanner all          [--mock] [--top N] [--json] [--out FILE]
+                                         [--social-limit N]
 ```
 
-- `--mock` — run on offline sample data (no keys).
-- `--require-social` — only show names with at least one Reddit mention.
-- `--top N` — limit rows (default 25).
+- `--mock` — run on bundled offline sample data (no keys).
+- `--top N` — max rows to show (default 25 for fundamentals/combined/all, 40 for social).
 - `--json` — machine-readable output (for piping / scheduling).
+- `--out FILE` — also save the result as JSON. For `social`, this file can be
+  fed back in via `combined --from-file FILE` to skip re-scanning.
+- `--from-file FILE` (combined only) — reuse a previously saved `social --out`
+  result instead of running a fresh social scan.
+- `--social-limit N` (combined/all) — how many top trending tickers (by
+  mention growth) get cross-referenced against FMP. Default: `SOCIAL_FMP_LIMIT`
+  env var, 50.
+- `--quiet` — suppress the banner. `-v`/`--verbose` — debug logging.
 
 ## How scoring works
 
-See [`smallcap_scanner/scoring.py`](smallcap_scanner/scoring.py). Each sub-score is
-0–100; the composite is a configurable weighted blend (default 30% fundamental /
-30% momentum / 40% social). Crucially, **author diversity** is rewarded — a
-ticker pushed by many distinct redditors across multiple subs scores higher than
-one spammer repeating a cashtag, which instead earns a risk flag.
+See [`smallcap_scanner/scoring.py`](smallcap_scanner/scoring.py). Each sub-score
+is 0–100. `fundamentals` re-weights across just fundamental+momentum (no
+phantom social score diluting it); `combined` uses the full configurable blend
+(default 30% fundamental / 30% momentum / 40% social). Crucially, **author
+diversity** is rewarded where it's knowable (PRAW) — a ticker pushed by many
+distinct redditors scores higher than one spammer repeating a cashtag, which
+instead earns a risk flag. ApeWisdom-sourced mentions don't carry author data,
+so that check is skipped rather than misfiring (see `author_diversity_known`
+on `RedditSignal`).
 
 ## The options / LEAPS validation step
 
@@ -129,13 +191,13 @@ automatable with the live tools — see
 
 ## Scheduling ("scan consistently")
 
-Run it on a cron and append JSON output to a log:
+Run `all` on a cron and save the full three-list snapshot:
 
 ```cron
 # top of every hour during market hours, weekdays
 0 13-21 * * 1-5  cd /path/to/smallcap_scanner && \
-  /path/to/.venv/bin/python -m smallcap_scanner --require-social --json \
-  >> scans/$(date +\%Y-\%m-\%d).jsonl 2>&1
+  /path/to/.venv/bin/python -m smallcap_scanner all --quiet \
+  --out scans/$(date +\%Y-\%m-\%d_\%H).json >> scans/cron.log 2>&1
 ```
 
 ## Tests
@@ -149,17 +211,16 @@ pytest -q
 
 ```
 smallcap_scanner/
-  __main__.py           CLI entry point
+  __main__.py           CLI entry point (fundamentals/social/combined/all subcommands)
   config.py             env-driven config + thresholds
   models.py             dataclasses passed between stages
   fmp_client.py         FMP /stable screener + quote wrapper
   apewisdom_client.py   no-auth ApeWisdom mention/upvote aggregator
-  reddit_rss_client.py  RSS scraper for subs ApeWisdom doesn't cover (see ToS note)
-  reddit_client.py      PRAW OAuth scan — the fully compliant alternative
-  reddit_aggregate.py   shared post-aggregation + multi-provider merge logic
+  reddit_client.py      PRAW OAuth scan — for subs ApeWisdom doesn't track
+  reddit_aggregate.py   shared post-aggregation logic (PRAW + mock data)
   ticker_extract.py     cashtag/bare-ticker parsing with stopwords
-  scoring.py            sub-scores, composite, risk flags
-  pipeline.py           orchestration + table formatting
+  scoring.py            sub-scores, composite, risk flags (FMP-only + full-blend variants)
+  pipeline.py           the three scan stages + table/JSON formatting
   mock_data.py          offline sample data
 docs/robinhood_validation.md   how to validate LEAPS chains via Robinhood MCP
 tests/               unit tests (no network)

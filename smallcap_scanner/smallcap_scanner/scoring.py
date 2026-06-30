@@ -132,13 +132,23 @@ def risk_flags(
     stock: StockCandidate, reddit: Optional[RedditSignal], cfg: Config
 ) -> list[str]:
     flags: list[str] = []
+    t = cfg.thresholds
 
     if stock.price < 1.0:
         flags.append("SUB_$1 (delisting/illiquid-options risk)")
-    if stock.avg_volume < cfg.thresholds.avg_volume_min:
+    if stock.avg_volume < t.avg_volume_min:
         flags.append("THIN_VOLUME")
     if stock.change_pct is not None and stock.change_pct > 25:
         flags.append("ALREADY_PARABOLIC_TODAY (chasing risk)")
+
+    # Relevant for candidates sourced outside the fundamental screen (stage 3:
+    # social-discovered tickers looked up directly via FMP quote) — flags
+    # rather than silently drops them, so a popular but mega-cap name like
+    # AMC still shows up with full context instead of vanishing.
+    if not (t.price_min <= stock.price <= t.price_max):
+        flags.append("OUTSIDE_PRICE_RANGE")
+    if not (t.market_cap_min <= stock.market_cap <= t.market_cap_max):
+        flags.append("OUTSIDE_MARKET_CAP_RANGE")
 
     # Author-diversity checks only mean something for providers that expose
     # per-post authorship (RSS, PRAW) — aggregate-only sources like ApeWisdom
@@ -200,5 +210,42 @@ def rank(
         if require_social and not sig:
             continue
         out.append(score_candidate(stock, sig, cfg))
+    out.sort(key=lambda c: c.composite_score, reverse=True)
+    return out
+
+
+def score_candidate_fmp_only(stock: StockCandidate, cfg: Config) -> ScoredCandidate:
+    """Score a candidate on fundamentals + momentum only — no social input.
+
+    Used for the standalone "FMP prospects" list: the composite here is
+    re-weighted across just fundamental/momentum (rather than reusing
+    ``score_candidate`` with a zero social score, which would silently dilute
+    the composite by averaging in a phantom zero for the unused weight).
+    """
+    f_score, f_reasons = score_fundamental(stock, cfg)
+    m_score, m_reasons = score_momentum(stock)
+
+    wsum = cfg.weight_fundamental + cfg.weight_momentum
+    wsum = wsum or 1.0
+    composite = (cfg.weight_fundamental * f_score + cfg.weight_momentum * m_score) / wsum
+
+    return ScoredCandidate(
+        symbol=stock.symbol,
+        stock=stock,
+        reddit=None,
+        fundamental_score=f_score,
+        momentum_score=m_score,
+        social_score=0.0,
+        composite_score=composite,
+        reasons=f_reasons + m_reasons,
+        flags=risk_flags(stock, None, cfg),
+    )
+
+
+def rank_fmp_only(
+    stocks: Dict[str, StockCandidate], cfg: Config
+) -> list[ScoredCandidate]:
+    """Fundamentals+momentum-only ranking — the standalone FMP prospects list."""
+    out = [score_candidate_fmp_only(stock, cfg) for stock in stocks.values()]
     out.sort(key=lambda c: c.composite_score, reverse=True)
     return out

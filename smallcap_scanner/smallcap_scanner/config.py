@@ -29,16 +29,31 @@ def _get_int(name: str, default: int) -> int:
     return int(raw) if raw not in (None, "") else default
 
 
-# Subreddits ApeWisdom (https://apewisdom.io) already tracks — free, no-auth,
-# licensed third-party aggregation. Preferred wherever it has coverage.
+# Subreddits scanned via ApeWisdom (https://apewisdom.io) — free, no-auth,
+# licensed third-party aggregation, no scraping or ToS conflict.
+#
+# wallstreetbets/pennystocks were the original ask. Shortsqueeze, SqueezePlays,
+# SPACs and Daytrading were added after checking ApeWisdom's full tracked list
+# (https://apewisdom.io/methodology/): short-squeeze and SPAC communities skew
+# toward exactly the small/micro-cap, high-volatility profile this scanner
+# targets, and Daytrading's top mentions overlapped with names already
+# surfacing from wallstreetbets/pennystocks in testing. Deliberately excluded:
+# stocks, investing, options, StockMarket, WallStreetbetsELITE,
+# Wallstreetbetsnew — verified live and all are dominated by mega-cap mentions
+# (MSFT/AAPL/AMZN/SPY), which would just dilute the small-cap signal.
 DEFAULT_APEWISDOM_SUBREDDITS = [
     "wallstreetbets",
     "pennystocks",
+    "Shortsqueeze",
+    "SqueezePlays",
+    "SPACs",
+    "Daytrading",
 ]
 
-# Subreddits ApeWisdom does NOT cover, scraped directly via RSS as a fallback.
-# See reddit_rss_client.py for the compliance tradeoff this involves.
-DEFAULT_RSS_SUBREDDITS = [
+# Subreddits ApeWisdom does NOT cover. Only reachable via REDDIT_MODE=praw
+# (official Reddit OAuth) — direct RSS scraping was removed since it
+# conflicted with Reddit's robots.txt.
+DEFAULT_PRAW_ONLY_SUBREDDITS = [
     "TheRaceTo10Million",
     "raceto10000",
     "smallstreetbets",
@@ -86,11 +101,11 @@ class Config:
         default_factory=lambda: _get_int("FMP_ENRICH_LIMIT", 300)
     )
 
-    # "auto" (default): ApeWisdom for the subs it covers + RSS scraping for
-    # the rest, no credentials needed. "praw": official Reddit OAuth via
-    # PRAW, covering every subreddit in `subreddits` — requires
-    # REDDIT_CLIENT_ID/SECRET and is the only fully ToS-compliant option for
-    # the subs ApeWisdom doesn't track.
+    # "auto" (default): ApeWisdom only, no credentials needed. "praw":
+    # official Reddit OAuth, covering every subreddit in `subreddits`
+    # (including the ones ApeWisdom doesn't track) — requires
+    # REDDIT_CLIENT_ID/SECRET and is the only fully ToS-compliant way to
+    # reach those.
     reddit_mode: str = field(default_factory=lambda: os.getenv("REDDIT_MODE", "auto"))
 
     reddit_client_id: str = field(
@@ -111,7 +126,7 @@ class Config:
             s.strip()
             for s in os.getenv(
                 "SUBREDDITS",
-                ",".join(DEFAULT_APEWISDOM_SUBREDDITS + DEFAULT_RSS_SUBREDDITS),
+                ",".join(DEFAULT_APEWISDOM_SUBREDDITS + DEFAULT_PRAW_ONLY_SUBREDDITS),
             ).split(",")
             if s.strip()
         ]
@@ -125,21 +140,6 @@ class Config:
             if s.strip()
         ]
     )
-    reddit_rss_subreddits: List[str] = field(
-        default_factory=lambda: [
-            s.strip()
-            for s in os.getenv(
-                "REDDIT_RSS_SUBREDDITS", ",".join(DEFAULT_RSS_SUBREDDITS)
-            ).split(",")
-            if s.strip()
-        ]
-    )
-    # Delay between sequential RSS requests — keep this polite since the feeds
-    # are being used outside Reddit's stated crawl policy (see
-    # reddit_rss_client.py).
-    reddit_rss_delay_seconds: float = field(
-        default_factory=lambda: _get_float("REDDIT_RSS_DELAY_SECONDS", 2.0)
-    )
     # How many posts per subreddit listing to pull (praw mode), and how far
     # back to count mentions for the "momentum" window (all modes).
     reddit_post_limit: int = field(
@@ -147,6 +147,12 @@ class Config:
     )
     reddit_lookback_hours: int = field(
         default_factory=lambda: _get_int("REDDIT_LOOKBACK_HOURS", 72)
+    )
+    # Stage 3 (social -> FMP cross-reference): how many top social tickers,
+    # ranked by mention growth, get an FMP quote lookup. Bounds API calls
+    # since a 6-subreddit ApeWisdom scan can surface hundreds of tickers.
+    social_fmp_limit: int = field(
+        default_factory=lambda: _get_int("SOCIAL_FMP_LIMIT", 50)
     )
 
     thresholds: ScreenThresholds = field(default_factory=ScreenThresholds)
@@ -170,8 +176,8 @@ class Config:
     def has_reddit(self) -> bool:
         """Whether *some* social data source is usable.
 
-        In "auto" mode this is always True — ApeWisdom and RSS both need no
-        credentials. In "praw" mode it requires real OAuth credentials.
+        In "auto" mode this is always True — ApeWisdom needs no credentials.
+        In "praw" mode it requires real OAuth credentials.
         """
         if self.reddit_mode == "praw":
             return bool(self.reddit_client_id and self.reddit_client_secret)

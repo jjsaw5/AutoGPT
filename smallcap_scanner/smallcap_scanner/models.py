@@ -82,6 +82,20 @@ class RedditSignal:
             return 1.0
         return self.unique_authors / self.mentions_total
 
+    def to_row(self) -> Dict[str, object]:
+        """Raw fields for display/serialization. Scoring is computed
+        separately (see ``scoring.score_social``) to avoid a model->scoring
+        import cycle."""
+        return {
+            "symbol": self.symbol,
+            "mentions_total": self.mentions_total,
+            "mentions_recent": self.mentions_recent,
+            "unique_authors": self.unique_authors if self.author_diversity_known else None,
+            "upvotes_sum": self.upvotes_sum,
+            "subreddits": ",".join(self.subreddits),
+            "providers": ",".join(self.providers),
+        }
+
 
 @dataclass
 class ScoredCandidate:

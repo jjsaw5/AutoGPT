@@ -1,6 +1,6 @@
 from smallcap_scanner.config import Config
 from smallcap_scanner.models import RedditSignal, StockCandidate
-from smallcap_scanner.pipeline import run_scan
+from smallcap_scanner.pipeline import scan_combined, scan_fundamentals, scan_social
 from smallcap_scanner import scoring
 
 
@@ -60,9 +60,33 @@ def test_uptrend_scores_higher_than_downtrend():
     assert up_score > down_score
 
 
-def test_mock_pipeline_ranks_and_flags():
-    ranked = run_scan(_cfg(), mock=True, top_n=10)
+def test_scan_fundamentals_includes_every_fmp_candidate_with_no_social_score():
+    ranked = scan_fundamentals(_cfg(), mock=True, top_n=10)
+    syms = {c.symbol for c in ranked}
+    # FMP-only: every screened mock stock shows up, social-mentioned or not.
+    assert syms == {"SLS", "GRND", "QTUM", "PMPD", "STBL"}
+    assert all(c.social_score == 0.0 for c in ranked)
+    assert all(c.reddit is None for c in ranked)
+
+
+def test_scan_social_finds_tickers_outside_the_fmp_universe():
+    signals = scan_social(_cfg(), mock=True)
+    syms = {s.symbol for s in signals}
+    assert "SLS" in syms
+    # MOONX is only ever mentioned in mock posts, never in MOCK_STOCKS —
+    # confirms stage 2 doesn't filter to the FMP-screened universe.
+    assert "MOONX" in syms
+    # Sorted by net-new mentions (all mock posts are "recent") desc.
+    assert signals[0].mentions_recent >= signals[-1].mentions_recent
+
+
+def test_scan_combined_only_contains_socially_discovered_tickers_and_flags_pump():
+    ranked = scan_combined(_cfg(), mock=True, top_n=10)
     syms = [c.symbol for c in ranked]
+    # QTUM/STBL are never mentioned in mock posts, so stage 3 (built from the
+    # social list) never includes them even though they're FMP-screened.
+    assert "QTUM" not in syms
+    assert "STBL" not in syms
     assert "SLS" in syms
     # The multi-author, multi-subreddit SLS should outrank the single-spammer PMPD.
     pos = {c.symbol: i for i, c in enumerate(ranked)}
@@ -71,9 +95,10 @@ def test_mock_pipeline_ranks_and_flags():
     assert any("pump" in f.lower() for f in pmpd.flags)
 
 
-def test_require_social_filters_out_silent_names():
-    ranked = run_scan(_cfg(), mock=True, require_social=True, top_n=10)
-    syms = {c.symbol for c in ranked}
-    # STBL and QTUM have no mock Reddit mentions.
-    assert "STBL" not in syms
-    assert "SLS" in syms
+def test_scan_combined_flags_ticker_outside_screen_range():
+    ranked = scan_combined(_cfg(), mock=True, top_n=10)
+    moonco = next(c for c in ranked if c.symbol == "MOONX")
+    # MOONX ($42.50, $8.5B cap) is well outside the default price/cap band —
+    # stage 3 surfaces it with full context rather than silently dropping it.
+    assert "OUTSIDE_PRICE_RANGE" in moonco.flags
+    assert "OUTSIDE_MARKET_CAP_RANGE" in moonco.flags

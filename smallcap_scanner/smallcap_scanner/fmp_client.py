@@ -97,6 +97,16 @@ class FMPClient:
         log.info("FMP screener returned %d candidates", len(out))
         return out
 
+    def _quote_one(self, symbol: str) -> dict | None:
+        try:
+            data = self._get("quote", {"symbol": symbol})
+        except FMPError as exc:
+            log.debug("quote lookup failed for %s: %s", symbol, exc)
+            return None
+        if not isinstance(data, list) or not data:
+            return None
+        return data[0]
+
     def enrich_quotes(self, candidates: List[StockCandidate]) -> None:
         """Populate 50/200d averages, 52w range and live volume in-place.
 
@@ -119,14 +129,9 @@ class FMPClient:
             )
 
         for i, c in enumerate(to_enrich):
-            try:
-                data = self._get("quote", {"symbol": c.symbol})
-            except FMPError as exc:
-                log.debug("quote enrichment failed for %s: %s", c.symbol, exc)
+            q = self._quote_one(c.symbol)
+            if q is None:
                 continue
-            if not isinstance(data, list) or not data:
-                continue
-            q = data[0]
             c.price = float(q.get("price") or c.price)
             c.volume = float(q.get("volume") or c.volume)
             c.year_high = _f(q.get("yearHigh"))
@@ -136,6 +141,41 @@ class FMPClient:
             c.change_pct = _f(q.get("changePercentage"))
             if (i + 1) % 50 == 0:
                 log.info("enriched %d/%d quotes", i + 1, len(to_enrich))
+
+    def quote_symbols(self, symbols: List[str]) -> Dict[str, StockCandidate]:
+        """Build fresh StockCandidates for arbitrary symbols via /stable/quote.
+
+        Unlike ``screen()``, this applies no price/market-cap/volume filter —
+        it's for looking up specific tickers (e.g. names surfaced by a social
+        scan) regardless of whether they'd pass the fundamental screen. Symbols
+        FMP doesn't recognize are silently skipped.
+        """
+        out: Dict[str, StockCandidate] = {}
+        for i, symbol in enumerate(symbols):
+            q = self._quote_one(symbol)
+            if q is None:
+                continue
+            sym = str(q.get("symbol", symbol)).upper()
+            volume = float(q.get("volume") or 0)
+            out[sym] = StockCandidate(
+                symbol=sym,
+                name=q.get("name", ""),
+                price=float(q.get("price") or 0),
+                market_cap=float(q.get("marketCap") or 0),
+                volume=volume,
+                # No screener step here to source a true rolling average from;
+                # same same-day-volume proxy used elsewhere in this client.
+                avg_volume=volume,
+                exchange=q.get("exchange", ""),
+                year_high=_f(q.get("yearHigh")),
+                year_low=_f(q.get("yearLow")),
+                price_avg_50=_f(q.get("priceAvg50")),
+                price_avg_200=_f(q.get("priceAvg200")),
+                change_pct=_f(q.get("changePercentage")),
+            )
+            if (i + 1) % 50 == 0:
+                log.info("quoted %d/%d symbols", i + 1, len(symbols))
+        return out
 
 
 def _f(v: object):
