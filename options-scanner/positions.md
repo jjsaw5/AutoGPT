@@ -21,10 +21,23 @@
 2. TIME-STOP (MONITORED, DATE): CLOSE ON/BEFORE 2026-08-11 (2d before ER 8/13).
 3. THESIS EXIT: close if JD reclaims 50-DMA (WATCH — JD +3.2% on 7/1, closing on it).
 
+## PFE long put  [OPENED 2026-07-01 — scanner, clean no-override entry]
+- Contract: PFE 2026-08-21 $24.00 PUT (long_put)
+- Qty: 1 | Fill: $0.99 | Cost: $99.04 incl fees | MAX LOSS = $99.04
+- option_id: 276f2ded-2a90-457a-bec3-eedb4caa006a
+- Thesis: PFE weak (below DMAs, death cross). Score 11.1. Pharma — diversifies bearish sleeve.
+- Gates: delta -0.474, OI 14,112, spread 2.0%, IV 28% (cleanest entry yet). No overrides.
+### EXITS
+1. TAKE-PROFIT (resting): GTC sell_to_close @ $1.98 (+100%) — order 6a453165-0766-40e4-9c9e-3b4e522439cb
+2. TIME-STOP (MONITORED, DATE): CLOSE ON/BEFORE 2026-08-02 (2d before ER 8/4).
+3. THESIS EXIT: close if PFE reclaims 50-DMA (~$25.8).
+
 ## CAP USAGE
-- Open puts: 2 / 5 (MAX_OPEN).
-- PUT sleeve used: NIO $48 + JD $178 = $226 / $400  ->  ROOM = ~$174.
-- BP after BILI trim: ~$190.
+- Open puts: 3 / 5 (MAX_OPEN).
+- PUT sleeve used: NIO $48 + JD $178 + PFE $99 = $325 / $400  ->  ROOM = ~$75.
+- BP: $370 settled (+$119 pending from BILI trade, clears ~7/2). Sleeve (not BP) is the binding limit.
+- NOTE: account grew to ~$846 via deposits; $400 sleeve cap now ~47% of account. Consider
+  a deliberate cap resize if scaling up (discussed, not yet changed).
 
 ## REMAINING EQUITY (not liquidated): MRK, MA, JPM, V, KO, AMD
 
