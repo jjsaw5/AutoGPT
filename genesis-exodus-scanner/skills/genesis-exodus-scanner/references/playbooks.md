@@ -107,20 +107,61 @@ The two constants ($5 price floor in `fmp.py`, $10 deployable floor in `ops.py`)
 across the two independent CLI scripts (they don't import each other) rather than shared -- if you
 change `UNIVERSE_PRICE_FLOOR`, update `DEPLOYABLE_CAPITAL_FLOOR` to match (2x it) by hand.
 
+## Confidence formula (the SKILL.md §7 "confidence >= 7" gate)
+
+The original build guide required "Score 0-10 each; BUY only if ALL: confidence >=7..." without
+ever defining what the score is made of -- like R:R and ideal entry, this was left as prose. It's
+now computed by `fmp.py confidence SYM` (`compute_confidence()` in `scripts/fmp.py`).
+
+**Design principle: this scores MARGIN beyond gates that already exist separately, it doesn't
+duplicate or replace them.** Trend template, R:R, liquidity, entry quality, the earnings guard, and
+the mandatory news check are all independent hard pass/fail requirements elsewhere in SKILL.md §7
+-- a candidate needs ALL of them to pass regardless of its confidence score. Confidence exists to
+answer a different question: among candidates that already clear every hard gate, which one is the
+strongest conviction, and is even a technically-qualifying candidate actually good enough to act on
+(the >=7 bar can still reject a marginal pass)?
+
+**`trend_template_pass = false` is a hard zero**, not a partial score -- matching this file's
+original (never-implemented) note under the Genesis engine that trend template is "a hard
+requirement -- 0 if failed." A stock that isn't a confirmed trend leader gets confidence=0 no
+matter how good its other numbers look.
+
+Otherwise, 5 dimensions each contribute 0-2 points (10 max), scoring how far a candidate clears its
+own dimension's separate minimum -- not just whether it clears it:
+
+| Dimension | 2 points | 1 point | 0 points |
+|---|---|---|---|
+| Relative strength (`rs_vs_spy`) | >= 50 (clear leadership) | >= 15 (real but modest) | < 15 |
+| R:R margin (`rr_ratio`) | >= 3.0 | >= 2.0 (the minimum) | < 2.0 |
+| Entry quality (`pct_above_ideal_entry`) | <= 2% | <= 8% (the maximum) | > 8% |
+| Liquidity margin (`avgDollarVol20`) | >= 3x the $3M floor ($9M+) | >= 1x the floor | below floor |
+| Earnings safety margin | >= 15 trading days out | > 7 (the guard minimum) | <= 7 (already blocked) |
+
+Missing data on any dimension scores that dimension 0 -- fail closed, same as every other gate in
+this file, never a guessed middle value.
+
+Worked examples from real 2026-07-01 data:
+
+| Symbol | RS | R:R | Entry | Liquidity | Earnings | Confidence | Notes |
+|---|---|---|---|---|---|---|---|
+| NBIS | 2 (106.2) | 1 (2.36) | 1 (7.14%) | 2 ($4.5B/day) | 2 (36d) | **8/10** | Passes the >=7 bar on confidence alone -- still correctly blocked by the mandatory news check (Meta competitive threat). Proof the score doesn't override the other gates. |
+| INTC | 2 (173.2) | 0 (1.08) | 0 (13.1%) | 2 ($16.1B/day) | 2 (22d) | 6/10 | Below the bar -- consistent with its independent R:R and entry-gate failures. |
+| TTWO | -- | -- | -- | -- | -- | 0/10 | Hard zero: `trend_template_pass=false` (150-DMA below 200-DMA). |
+
+The exact thresholds (50/15 for RS, 3.0 for strong R:R, 2%/8% for entry, 3x for liquidity, 15 days
+for earnings) are CUSTOMIZE constants (`CONFIDENCE_*` in `scripts/fmp.py`) like everything else in
+the active growth profile -- backtest before changing them.
+
 ## Genesis engine — "own the leaders"
 
 Primary entry style. Discovery: `fmp.py screener` for a quality, liquid US universe (real
 companies, no ETFs/funds — `isEtf=false`, `isFund=false`), then rank by blended relative strength
 (`fmp.py rs SYM`) among names that pass the trend template.
 
-Score 0–10 on:
-- Relative strength percentile vs. the current universe (higher = better).
-- Trend template pass (hard requirement — 0 if failed).
-- Distance from ideal entry (near a natural support / prior breakout level scores higher; more
-  than ~8% above ideal entry is disqualifying per SKILL.md §7).
-- Volume quality: `avgDollarVol20` comfortably above your minimum liquidity floor.
-- Sector concentration: does adding this name push a sector over the `<=3 per sector` cap?
-- Earnings guard clean (`fmp.py earnings SYM`, `earnings_guard_block=false`).
+Score via `fmp.py confidence SYM` (see "Confidence formula" above for the full breakdown: relative
+strength, R:R margin, entry quality, liquidity margin, earnings safety margin, with trend template
+as a hard zero). Sector concentration (does adding this name push a sector over the `<=3 per
+sector` cap?) is checked separately as a portfolio-level cap, not folded into the per-symbol score.
 
 A fresh breakout (`breakout20` / `breakout55` true) is a bonus, not a prerequisite — Genesis will
 buy a strong leader mid-trend if the trend template and relative strength both qualify.
@@ -132,15 +173,21 @@ Discovery: `fmp.py movers` losers list, filtered to names that still pass a rela
 an Exodus opportunity). Exodus looks for high-quality names that sold off sharply on the day but
 remain structurally sound, with a stop just below the day's low or a recent higher-low.
 
-Score 0–10 on:
-- Quality of the underlying trend (still must pass or nearly pass the trend template).
+Score via `fmp.py confidence SYM`, same as Genesis (trend template still applies as a hard zero —
+"relaxed" above means the discovery/screening step is lenient about a fresh breakout not being
+required, not that the trend template gate itself is skipped). Two things matter more here than for
+a typical Genesis entry:
 - Reason for the drop: prefer broad-market/sector-driven selloffs over company-specific bad news.
   This is no longer just a scoring input — SKILL.md §2 step 12b / §7 NEWS CHECK makes running
   `fmp.py news SYM` and recording an explicit pass/fail judgment MANDATORY for the top candidate
   before any buy, Exodus or Genesis. A name gapping down on negative company-specific news is
-  disqualified to WATCHLIST, full stop, no matter how clean the rest of the setup is.
-- R:R from a tight stop just under the day's low/recent structure to a realistic near-term target.
-- Not within the earnings guard window.
+  disqualified to WATCHLIST, full stop, no matter how clean the rest of the setup is (or how high
+  it scored on confidence -- see the worked example below).
+- R:R from a tight stop just under the day's low/recent structure — the standard R:R formula
+  already accounts for this via the ATR-multiple branch when a name is near its highs, but a stop
+  placed at the day's actual low/recent structure (rather than a flat 10%) may be tighter and
+  produce a better real R:R than the formula's default assumption; use judgment on which stop is
+  actually being risked.
 
 ### Worked example: why the news check is mandatory, not advisory
 

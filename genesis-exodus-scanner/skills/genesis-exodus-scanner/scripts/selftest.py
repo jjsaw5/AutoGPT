@@ -328,6 +328,59 @@ def test_ops_preflight_backward_compatible_without_buying_power(tmp):
     record("ops: preflight without --buying-power skips the floor check (backward compatible)", PASS if ok else FAIL, json.dumps(data))
 
 
+def test_confidence_trend_template_fail_is_hard_zero(tmp):
+    # TTWO-shaped case: even with excellent other numbers, a failed trend template must zero out.
+    conf = fmp_module.compute_confidence(
+        trend_template_pass=False, rs_vs_spy=200.0, rr_ratio=5.0,
+        pct_above_ideal_entry=0.5, avg_dollar_vol20=50_000_000, earnings_trading_days_out=100,
+    )
+    ok = conf["confidence"] == 0 and "hard zero" in conf["reason"]
+    record("fmp: confidence is a hard zero when trend_template_pass is false", PASS if ok else FAIL, json.dumps(conf))
+
+
+def test_confidence_nbis_case(tmp):
+    # Real NBIS data from the 2026-07-01 sims: strong RS, R:R just over the 2:1 minimum, decent
+    # entry, very liquid, earnings comfortably clear.
+    conf = fmp_module.compute_confidence(
+        trend_template_pass=True, rs_vs_spy=106.2, rr_ratio=2.36,
+        pct_above_ideal_entry=7.14, avg_dollar_vol20=4_463_857_521, earnings_trading_days_out=36,
+    )
+    ok = conf["confidence"] == 8 and conf["components"] == {
+        "relative_strength": 2, "risk_reward": 1, "entry_quality": 1,
+        "liquidity": 2, "earnings_safety": 2,
+    }
+    record("fmp: confidence scores 8/10 on the real NBIS case (would pass >=7 if not for the news check)", PASS if ok else FAIL, json.dumps(conf))
+
+
+def test_confidence_intc_case(tmp):
+    # Real INTC data: strong RS, but already failed R:R and entry-extension -- confidence should
+    # reflect that even though trend_template_pass is true.
+    conf = fmp_module.compute_confidence(
+        trend_template_pass=True, rs_vs_spy=173.16, rr_ratio=1.08,
+        pct_above_ideal_entry=13.11, avg_dollar_vol20=16_134_998_831, earnings_trading_days_out=22,
+    )
+    ok = conf["confidence"] == 6
+    record("fmp: confidence scores 6/10 on the real INTC case (below the >=7 bar, consistent with its other gate failures)", PASS if ok else FAIL, json.dumps(conf))
+
+
+def test_confidence_missing_data_fails_closed_per_component(tmp):
+    conf = fmp_module.compute_confidence(
+        trend_template_pass=True, rs_vs_spy=None, rr_ratio=None,
+        pct_above_ideal_entry=None, avg_dollar_vol20=None, earnings_trading_days_out=None,
+    )
+    ok = conf["confidence"] == 0 and all(v == 0 for v in conf["components"].values())
+    record("fmp: confidence scores 0 per-component on missing data, not a crash or a guess", PASS if ok else FAIL, json.dumps(conf))
+
+
+def test_confidence_all_strong_maxes_at_ten(tmp):
+    conf = fmp_module.compute_confidence(
+        trend_template_pass=True, rs_vs_spy=200.0, rr_ratio=5.0,
+        pct_above_ideal_entry=0.5, avg_dollar_vol20=50_000_000, earnings_trading_days_out=100,
+    )
+    ok = conf["confidence"] == 10
+    record("fmp: confidence maxes at 10/10 when every dimension clears its strong threshold", PASS if ok else FAIL, json.dumps(conf))
+
+
 def test_fmp_key_missing_is_graceful(tmp):
     proc = run_fmp(tmp, "regime")
     if proc.returncode == 0:
@@ -398,6 +451,11 @@ def main():
         test_ideal_entry_breakout_case_uses_breakout_level(tmp)
         test_ideal_entry_prefers_55day_breakout_over_20day(tmp)
         test_ideal_entry_missing_data_fails_closed(tmp)
+        test_confidence_trend_template_fail_is_hard_zero(tmp)
+        test_confidence_nbis_case(tmp)
+        test_confidence_intc_case(tmp)
+        test_confidence_missing_data_fails_closed_per_component(tmp)
+        test_confidence_all_strong_maxes_at_ten(tmp)
 
     with tempfile.TemporaryDirectory(prefix="genesis-selftest-fmp-") as tmp_str2:
         tmp2 = Path(tmp_str2)

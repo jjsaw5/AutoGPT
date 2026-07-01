@@ -69,6 +69,9 @@ def check_liquidity(avg_dollar_vol20, floor=UNIVERSE_MIN_AVG_DOLLAR_VOL20):
 ENTRY_MAX_PCT_ABOVE_IDEAL = 8.0
 
 
+EARNINGS_GUARD_TRADING_DAYS = 7  # SKILL.md's "~5 trading days" guard, implemented as 7 here
+
+
 def compute_ideal_entry(price, sma50, hi20, hi55, breakout20=False, breakout55=False,
                          max_pct_above=ENTRY_MAX_PCT_ABOVE_IDEAL):
     """Deterministic reference price for the SKILL.md §7 buy gate. Pure function (no I/O) so it's
@@ -97,6 +100,92 @@ def compute_ideal_entry(price, sma50, hi20, hi55, breakout20=False, breakout55=F
         "pct_above_ideal_entry": pct_above,
         "entry_gate_pass": pct_above <= max_pct_above,
         "entry_method": method,
+    }
+
+
+# Confidence score (SKILL.md §7 "confidence >= 7" buy gate) -- previously ungraded prose ("Score
+# 0-10 each") with no formula behind it. This scores MARGIN beyond the other independent hard
+# gates -- it does NOT replace them. A candidate must pass trend_template_pass, rr_pass,
+# liquidity_pass, entry_gate_pass, the earnings guard, AND the mandatory news check separately;
+# confidence >= 7 is an ADDITIONAL requirement on top, not a substitute for any of them (e.g. NBIS
+# scored 8/10 confidence on 2026-07-01 but was still correctly blocked by the news check).
+CONFIDENCE_RS_STRONG = 50.0             # rs_vs_spy threshold for "clear leadership" (2 pts)
+CONFIDENCE_RS_MODERATE = 15.0           # rs_vs_spy threshold for "real but modest" (1 pt)
+CONFIDENCE_RR_STRONG = 3.0              # rr_ratio threshold for comfortably past the 2:1 minimum
+CONFIDENCE_ENTRY_TIGHT_PCT = 2.0        # pct_above_ideal_entry threshold for "right at" the entry
+CONFIDENCE_LIQUIDITY_STRONG_MULTIPLE = 3.0   # multiple of UNIVERSE_MIN_AVG_DOLLAR_VOL20
+CONFIDENCE_EARNINGS_SAFE_DAYS = 15      # trading days out considered comfortably clear
+
+
+def compute_confidence(trend_template_pass, rs_vs_spy, rr_ratio, pct_above_ideal_entry,
+                        avg_dollar_vol20, earnings_trading_days_out):
+    """0-10 confidence score. Pure function (no I/O) so it's unit-testable offline.
+
+    trend_template_pass is a hard zero-out, not a scored dimension: a candidate that isn't a
+    confirmed trend leader gets confidence=0 regardless of how good everything else looks --
+    matching playbooks.md's original (never-implemented) "Trend template pass (hard requirement
+    -- 0 if failed)" note. The remaining 5 dimensions (relative strength, R:R margin, entry
+    quality, liquidity margin, earnings safety margin) each contribute 0-2 points on how far they
+    clear their OWN separate hard gate's minimum, not just whether they clear it -- summing to a
+    0-10 total. Missing data on any dimension scores that dimension 0 (fail closed), matching every
+    other gate in this file.
+    """
+    if not trend_template_pass:
+        return {
+            "confidence": 0,
+            "components": {
+                "relative_strength": 0, "risk_reward": 0, "entry_quality": 0,
+                "liquidity": 0, "earnings_safety": 0,
+            },
+            "reason": "trend_template_pass is false -- hard zero, not a partial score",
+        }
+
+    if rs_vs_spy is not None and rs_vs_spy >= CONFIDENCE_RS_STRONG:
+        rs_pts = 2
+    elif rs_vs_spy is not None and rs_vs_spy >= CONFIDENCE_RS_MODERATE:
+        rs_pts = 1
+    else:
+        rs_pts = 0
+
+    if rr_ratio is not None and rr_ratio >= CONFIDENCE_RR_STRONG:
+        rr_pts = 2
+    elif rr_ratio is not None and rr_ratio >= RR_MIN_RATIO:
+        rr_pts = 1
+    else:
+        rr_pts = 0
+
+    if pct_above_ideal_entry is not None and pct_above_ideal_entry <= CONFIDENCE_ENTRY_TIGHT_PCT:
+        entry_pts = 2
+    elif pct_above_ideal_entry is not None and pct_above_ideal_entry <= ENTRY_MAX_PCT_ABOVE_IDEAL:
+        entry_pts = 1
+    else:
+        entry_pts = 0
+
+    strong_liquidity_floor = UNIVERSE_MIN_AVG_DOLLAR_VOL20 * CONFIDENCE_LIQUIDITY_STRONG_MULTIPLE
+    if avg_dollar_vol20 is not None and avg_dollar_vol20 >= strong_liquidity_floor:
+        liq_pts = 2
+    elif avg_dollar_vol20 is not None and avg_dollar_vol20 >= UNIVERSE_MIN_AVG_DOLLAR_VOL20:
+        liq_pts = 1
+    else:
+        liq_pts = 0
+
+    if earnings_trading_days_out is not None and earnings_trading_days_out >= CONFIDENCE_EARNINGS_SAFE_DAYS:
+        earn_pts = 2
+    elif earnings_trading_days_out is not None and earnings_trading_days_out > EARNINGS_GUARD_TRADING_DAYS:
+        earn_pts = 1
+    else:
+        earn_pts = 0
+
+    return {
+        "confidence": rs_pts + rr_pts + entry_pts + liq_pts + earn_pts,
+        "components": {
+            "relative_strength": rs_pts,
+            "risk_reward": rr_pts,
+            "entry_quality": entry_pts,
+            "liquidity": liq_pts,
+            "earnings_safety": earn_pts,
+        },
+        "reason": None,
     }
 
 
@@ -322,8 +411,10 @@ def cmd_movers(args):
 
 # -------------------------------------------------------------- indicators
 
-def cmd_indicators(args):
-    symbol = args.symbol.upper()
+def gather_indicators(symbol):
+    """Does the actual work for `indicators` -- factored out so `confidence` (which also needs
+    earnings data from a separate endpoint) can reuse it without a second network round-trip
+    for the same series."""
     series = _closes(symbol, days=260)
     closes, highs, lows, volumes = series["closes"], series["highs"], series["lows"], series["volumes"]
     price = closes[0]
@@ -385,7 +476,7 @@ def cmd_indicators(args):
     rr = compute_reward_risk(price, hi52, atr20, breakout20, breakout55)
     entry = compute_ideal_entry(price, sma50, hi20, hi55, breakout20, breakout55)
 
-    out({
+    return {
         "symbol": symbol,
         "price": price,
         "sma50": sma50,
@@ -417,6 +508,41 @@ def cmd_indicators(args):
         "avgDollarVol20": avg_dollar_vol20,
         "liquidity_pass": liquidity_pass,
         "marketCap": fundamentals.get("marketCap"),
+    }
+
+
+def cmd_indicators(args):
+    out(gather_indicators(args.symbol.upper()))
+
+
+def cmd_confidence(args):
+    symbol = args.symbol.upper()
+    ind = gather_indicators(symbol)
+    earn = _next_earnings(symbol)
+    trading_days_out = earn["trading_days_out_approx"] if earn else None
+
+    conf = compute_confidence(
+        ind["trend_template_pass"], ind["rs_vs_spy"], ind["rr_ratio"],
+        ind["pct_above_ideal_entry"], ind["avgDollarVol20"], trading_days_out,
+    )
+
+    out({
+        "symbol": symbol,
+        "confidence": conf["confidence"],
+        "confidence_pass": conf["confidence"] >= 7,
+        "components": conf["components"],
+        "reason": conf["reason"],
+        "underlying": {
+            "trend_template_pass": ind["trend_template_pass"],
+            "rs_vs_spy": ind["rs_vs_spy"],
+            "rr_ratio": ind["rr_ratio"],
+            "rr_pass": ind["rr_pass"],
+            "pct_above_ideal_entry": ind["pct_above_ideal_entry"],
+            "entry_gate_pass": ind["entry_gate_pass"],
+            "avgDollarVol20": ind["avgDollarVol20"],
+            "liquidity_pass": ind["liquidity_pass"],
+            "next_earnings": earn,
+        },
     })
 
 
@@ -446,7 +572,7 @@ def _next_earnings(symbol):
 def cmd_earnings(args):
     symbol = args.symbol.upper()
     upcoming = _next_earnings(symbol)
-    within_guard = upcoming is not None and upcoming["trading_days_out_approx"] <= 7
+    within_guard = upcoming is not None and upcoming["trading_days_out_approx"] <= EARNINGS_GUARD_TRADING_DAYS
     out({"symbol": symbol, "next_earnings": upcoming, "earnings_guard_block": within_guard})
 
 
@@ -456,7 +582,7 @@ def cmd_earnings_multi(args):
         symbol = symbol.upper()
         try:
             upcoming = _next_earnings(symbol)
-            within_guard = upcoming is not None and upcoming["trading_days_out_approx"] <= 7
+            within_guard = upcoming is not None and upcoming["trading_days_out_approx"] <= EARNINGS_GUARD_TRADING_DAYS
             results[symbol] = {"next_earnings": upcoming, "earnings_guard_block": within_guard}
         except SystemExit:
             results[symbol] = {"error": "lookup failed"}
@@ -671,6 +797,10 @@ def build_parser():
     sp = sub.add_parser("indicators", help="full technical read on one symbol")
     sp.add_argument("symbol")
     sp.set_defaults(func=cmd_indicators)
+
+    sp = sub.add_parser("confidence", help="0-10 confidence score for the SKILL.md buy gate")
+    sp.add_argument("symbol")
+    sp.set_defaults(func=cmd_confidence)
 
     sp = sub.add_parser("earnings", help="next-earnings guard for one symbol")
     sp.add_argument("symbol")

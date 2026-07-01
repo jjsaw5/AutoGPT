@@ -105,7 +105,8 @@ genuinely-hit profit-recovery sell.
     discoveries -- they still go through every gate below, including a FRESH mandatory news check
     (the reason they were watchlisted may be stale, resolved, or replaced by something new).
     Entries not yet triggered are left as-is; don't re-run their full gate stack every scan.
-12. Rank candidates (including any triggered watchlist entries); require confidence >=7/10 and
+12. Rank candidates (including any triggered watchlist entries); require confidence >=7/10
+    (computed by `fmp.py confidence SYM` -- see CONFIDENCE FORMULA below, never eyeballed) and
     R:R >=2:1. Advisory sensors sharpen the call.
 12b. MANDATORY NEWS CHECK on the top candidate (not optional, not skippable to save time/tokens):
     run `fmp.py news SYM`, read the actual headlines, and record an explicit pass/fail + one-line
@@ -140,7 +141,8 @@ PYRAMID winners (add a unit each ~1x ATR above the last add, up to 3 units) — 
 
 ## 7. BUY DISCOVERY (Genesis / Exodus / Turtle) — heavily gated
 Run both engines; Turtle only if it also passes Genesis-quality. Score 0–10 each; BUY only if ALL:
-confidence >=7, R:R >=2:1 (computed by `fmp.py indicators` -- see R:R FORMULA below, never eyeballed),
+confidence >=7 (computed by `fmp.py confidence SYM` -- see CONFIDENCE FORMULA below, never
+eyeballed), R:R >=2:1 (computed by `fmp.py indicators` -- see R:R FORMULA below, never eyeballed),
 liquidity_pass (`fmp.py indicators`'s avgDollarVol20 >= $3,000,000/day -- see references/playbooks.md
 "Universe rules" for the full set of persisted screener defaults), market filter passes, stop defined,
 entry_gate_pass (`fmp.py indicators`'s deterministic "price <=8% above ideal entry" check -- see
@@ -183,6 +185,17 @@ Otherwise ideal entry is the 50-day SMA -- the natural pullback/support level fo
 never required a fresh breakout). `pct_above_ideal_entry = (price - ideal_entry) / ideal_entry * 100`;
 the gate needs `pct_above_ideal_entry <= 8.0` (`entry_gate_pass`). Missing SMA50/breakout-level data ->
 the function returns null -> treat as a gate FAILURE.
+
+CONFIDENCE FORMULA (deterministic, computed by `fmp.py confidence SYM` -- see references/playbooks.md
+for the full derivation + worked examples): `trend_template_pass=false` is a HARD ZERO (confidence=0),
+not a partial score. Otherwise, 5 dimensions each contribute 0-2 points (10 max), scoring MARGIN beyond
+each dimension's own separate hard-gate minimum, not just whether it clears it: relative strength
+(`rs_vs_spy` >=50 -> 2, >=15 -> 1, else 0), R:R margin (`rr_ratio` >=3.0 -> 2, >=2.0 -> 1, else 0), entry
+quality (`pct_above_ideal_entry` <=2% -> 2, <=8% -> 1, else 0), liquidity margin (`avgDollarVol20` >=3x
+the $3M floor -> 2, >=1x -> 1, else 0), earnings safety margin (>=15 trading days out -> 2, >7 (the
+guard minimum) -> 1, else 0). This score is ADDITIONAL to, never a substitute for, the other independent
+gates -- e.g. NBIS scored 8/10 confidence on 2026-07-01 but was still correctly blocked by the mandatory
+news check. Missing data on any dimension scores that dimension 0, not a guess.
 
 SIZING: size each entry at the lesser of $2,000 and 20% of equity (derived from RISK_PER_TRADE=2% of
 equity / INITIAL_STOP=10%, at the ~$10,000 account funding level this was tuned for: 2% of $10,000 =
