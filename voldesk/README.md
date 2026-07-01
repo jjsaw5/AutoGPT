@@ -34,9 +34,17 @@ executing any trades.
 
 ## What this package does NOT do
 
-- No GEX (gamma exposure) calculation from raw options chain data -- bring
-  your own vendor export (the gamma screen CSV).
-- No live market data fetching (no quotes, no candles, no historicals).
+- No calculation of the Vol Desk *proprietary* levels (pTrans, nTrans,
+  COTMP, COTMC, the 11-point "grade", "db_change") from raw options chain
+  data -- no published formula for these exists anywhere in this codebase.
+  Bring your own vendor export (the gamma screen CSV) for those.
+- Standard, well-defined GEX/DEX/VEX/CEX math *can* be computed from a raw
+  options chain via `voldesk fetch` (see "Using FMP as a data source"
+  below), as an alternative to a manual CSV export for those specific
+  fields -- but this only covers the fields with a known, standard formula.
+- Live market data fetching is limited to what `voldesk fetch --provider
+  fmp` supports (an options chain + a quote for spot price); no candles or
+  historicals.
 - No order placement of any kind.
 - No autonomous or scheduled execution. Every decision point in the
   intended workflow requires a human to run a command and read the output.
@@ -188,6 +196,96 @@ which can see live quotes and place orders under your direct supervision.
    entry before riding toward T2 -- never chase T2 with an unprotected
    stop.
 
+## Using FMP as a data source
+
+`voldesk fetch` pulls a raw options chain from the [Financial Modeling
+Prep](https://financialmodelingprep.com/) (FMP) API and computes the
+*standard, well-defined* GEX/dealer-positioning metrics from it, as an
+alternative to a manual gamma-screen CSV export for those specific fields.
+
+### What FMP can and cannot supply
+
+FMP's options-chain endpoint gives you raw chain data: strikes,
+expirations, call/put, open interest, volume, and implied volatility. It
+does **not** give you:
+
+- **Greeks.** FMP does not return delta/gamma/vanna/charm. `voldesk`
+  computes them itself via textbook European Black-Scholes
+  (`voldesk/greeks.py`). US equity/index options are American-style
+  (early exercise allowed), so this is an *approximation* -- it is most
+  accurate for short-dated, near-the-money contracts, and least accurate
+  for deep ITM options (especially deep ITM puts on dividend payers, where
+  early-exercise value is not modeled at all).
+- **GEX/dealer-positioning derived levels.** Net GEX, GEX ratio, vGEX,
+  zero-gamma strike, OI walls, and net DEX/VEX/CEX are all computed here
+  (`voldesk/gex.py`) from the greeks above -- these are standard, publicly
+  documented formulas (see the docstrings in `voldesk/greeks.py` and
+  `voldesk/gex.py` for the exact math and edge-case handling).
+- **The Vol Desk proprietary levels.** pTrans, nTrans, COTMP, COTMC, the
+  11-point "grade", and "db_change" remain unavailable from FMP -- or from
+  any other source right now -- because no published formula for them
+  exists anywhere in this codebase. `voldesk fetch` prints them explicitly
+  as `NOT YET DEFINED`. As a consequence, `voldesk scan` / the entry
+  grading filters (`grading.py`) and the exit/stop framework (`exits.py`)
+  cannot run end-to-end on FMP-sourced data alone until those levels are
+  defined from the vendor's actual methodology -- they still require the
+  gamma-screen CSV export.
+
+### Schema caveat -- read before trusting the numbers
+
+**FMP's exact options-chain response field names were not verified
+against live API docs while building this** (the docs site blocked
+automated fetching during development). `voldesk/voldesk/sources/fmp.py`
+resolves each logical field (strike, option type, open interest, volume,
+implied volatility, expiration) against a short list of plausible
+alias names (e.g. `strike`/`strikePrice`, `openInterest`/`open_interest`)
+and raises a clear `ValueError` if none of them match -- it will never
+silently default a missing field to 0. Before trusting any numbers from
+`voldesk fetch`, call your FMP plan's options-chain endpoint directly,
+compare the real field names to the `_STRIKE_ALIASES` / `_OPTION_TYPE_ALIASES`
+/ etc. lists at the top of that file, and update them if they don't match.
+
+### Setup
+
+```bash
+export FMP_API_KEY=your-fmp-api-key
+```
+
+### CLI usage
+
+```bash
+voldesk fetch --provider fmp --symbol TSLA
+# optional: --expiration 2026-08-21 --risk-free-rate 0.05 --dividend-yield 0.0
+```
+
+Sample output:
+
+```
+Vol Desk fetch report: TSLA (FMP)
+  spot:              251.3
+  as_of:             2026-07-01
+  total_net_gex:     1234567.89
+  gex_ratio:         0.5821
+  zero_gamma_strike: 245.30
+  max_oi_strike:     250.00
+  oi_ratio:          0.5104
+  dex_ratio:         0.6210
+  vex_ratio:         0.4998
+  cex_ratio:         0.5555
+  vgex_ratio:        0.6002
+
+p_trans:   NOT YET DEFINED (no published formula -- see README)
+n_trans:   NOT YET DEFINED (no published formula -- see README)
+cotmp:     NOT YET DEFINED (no published formula -- see README)
+cotmc:     NOT YET DEFINED (no published formula -- see README)
+grade:     NOT YET DEFINED (no published formula -- see README)
+db_change: NOT YET DEFINED (no published formula -- see README)
+```
+
+`--provider` currently only accepts `fmp`; other values raise a clear
+"not implemented" error (the option exists so future providers can be
+added without changing the CLI surface).
+
 ## Module map
 
 - `voldesk/models.py` -- shared dataclasses and enums.
@@ -197,4 +295,8 @@ which can see live quotes and place orders under your direct supervision.
 - `voldesk/exits.py` -- the stop framework and take-profit recommendation.
 - `voldesk/ingest.py` -- gamma screen CSV loading.
 - `voldesk/ledger.py` -- JSON-file-backed position ledger.
+- `voldesk/greeks.py` -- Black-Scholes delta/gamma/vanna/charm, stdlib-only.
+- `voldesk/gex.py` -- GEX/vGEX/DEX/VEX/CEX, ratios, zero-gamma strike, OI
+  walls, computed from an options chain + greeks.
+- `voldesk/sources/fmp.py` -- FMP options-chain and quote client.
 - `voldesk/cli.py` -- the `voldesk` command-line tool.
