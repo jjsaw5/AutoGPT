@@ -47,6 +47,23 @@ RR_NEAR_HIGH_THRESHOLD_PCT = 3.0
 RR_ATR_REWARD_MULTIPLE = 3.0
 RR_MIN_RATIO = 2.0
 
+# Universe filter defaults (SKILL.md §7 / playbooks.md "Universe rules") -- CUSTOMIZE/backtest.
+# These used to be whatever CLI flags got typed in ad hoc each session; they're now real
+# persisted defaults so a bare `fmp.py screener` call (what an actual scheduled scan runs)
+# enforces the documented "quality, liquid universe" floor without the caller having to know
+# to pass them. Still overridable via explicit --marketCapMoreThan etc. for a one-off query.
+UNIVERSE_MARKET_CAP_FLOOR = 300_000_000       # $300M -- opens up quality small/mid-caps
+UNIVERSE_PRICE_FLOOR = 5.0                    # matches the hard-scope penny-stock (<$5) exclusion
+UNIVERSE_SHARE_VOLUME_FLOOR = 200_000         # coarse share-count pre-filter on the screener call
+UNIVERSE_MIN_AVG_DOLLAR_VOL20 = 3_000_000     # the real liquidity gate -- checked post-screener,
+                                               # since dollar volume (not share count) is what
+                                               # actually matters for slippage/manipulation risk
+
+
+def check_liquidity(avg_dollar_vol20, floor=UNIVERSE_MIN_AVG_DOLLAR_VOL20):
+    """Pure function (no I/O) so it's unit-testable offline in selftest.py."""
+    return avg_dollar_vol20 is not None and avg_dollar_vol20 >= floor
+
 
 def compute_reward_risk(price, high52, atr20, breakout20=False, breakout55=False,
                          stop_pct=RR_STOP_PCT,
@@ -320,6 +337,7 @@ def cmd_indicators(args):
         avg_dollar_vol20 = round(
             sum(v * c for v, c in zip(volumes[:20], closes[:20])) / 20, 2
         )
+    liquidity_pass = check_liquidity(avg_dollar_vol20)
 
     fundamentals = {}
     try:
@@ -355,6 +373,7 @@ def cmd_indicators(args):
         "rs_vs_spy": rs_vs_spy,
         "trend_template_pass": trend_template_pass,
         "avgDollarVol20": avg_dollar_vol20,
+        "liquidity_pass": liquidity_pass,
         "marketCap": fundamentals.get("marketCap"),
     })
 
@@ -596,10 +615,10 @@ def build_parser():
     sub.add_parser("regime", help="SPY/QQQ/IWM + VIX regime classification").set_defaults(func=cmd_regime)
 
     sp = sub.add_parser("screener", help="quality liquid US stock universe")
-    sp.add_argument("--marketCapMoreThan", type=float)
+    sp.add_argument("--marketCapMoreThan", type=float, default=UNIVERSE_MARKET_CAP_FLOOR)
     sp.add_argument("--marketCapLowerThan", type=float)
-    sp.add_argument("--priceMoreThan", type=float)
-    sp.add_argument("--volumeMoreThan", type=float)
+    sp.add_argument("--priceMoreThan", type=float, default=UNIVERSE_PRICE_FLOOR)
+    sp.add_argument("--volumeMoreThan", type=float, default=UNIVERSE_SHARE_VOLUME_FLOOR)
     sp.add_argument("--exchange")
     sp.add_argument("--sector")
     sp.add_argument("--limit", type=int, default=100)

@@ -135,11 +135,14 @@ PYRAMID winners (add a unit each ~1x ATR above the last add, up to 3 units) — 
 ## 7. BUY DISCOVERY (Genesis / Exodus / Turtle) — heavily gated
 Run both engines; Turtle only if it also passes Genesis-quality. Score 0–10 each; BUY only if ALL:
 confidence >=7, R:R >=2:1 (computed by `fmp.py indicators` -- see R:R FORMULA below, never eyeballed),
-market filter passes, stop defined, price <=8% above ideal entry, confirmed cash, tradability OK,
-NEWS CHECK passed (see below -- mandatory, not advisory), order review clean, no safety-rule fail,
-within hours, not a duplicate.
+liquidity_pass (`fmp.py indicators`'s avgDollarVol20 >= $3,000,000/day -- see references/playbooks.md
+"Universe rules" for the full set of persisted screener defaults), market filter passes, stop defined,
+price <=8% above ideal entry, confirmed cash, tradability OK, NEWS CHECK passed (see below -- mandatory,
+not advisory), order review clean, no safety-rule fail, within hours, not a duplicate.
 PRIMARY ENTRY: own the highest relative-strength names that pass the full trend template; a fresh
-breakout is a bonus, not a prerequisite.
+breakout is a bonus, not a prerequisite. This universe is NOT mega-cap-only -- the screener defaults
+to a $300M market-cap floor, so quality small/mid-caps are in scope as long as they clear the trend
+template, R:R, and liquidity gates like anything else.
 
 NEWS CHECK (mandatory, §2 step 12b): before sizing or placing ANY buy -- Genesis or Exodus-sourced --
 run `fmp.py news SYM` on the top candidate. The command auto-flags likely negative-catalyst keywords

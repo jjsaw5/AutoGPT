@@ -160,6 +160,20 @@ any buy -- being on the watchlist waives nothing, it just saves re-running disco
 
 Never, without explicit manual approval: options, shorting, margin, leveraged ETFs, crypto,
 futures, penny stocks (<$5), low-volume pumps, biotech binary-event gambles, averaging down,
-after-hours trades. The screener (`isEtf=false`, `isFund=false`, `priceMoreThan` >= your floor,
-`volumeMoreThan` >= your liquidity floor) enforces the mechanical parts of this; the earnings
-guard and news sensor cover the binary-event and headline-risk parts.
+after-hours trades.
+
+These are now persisted defaults in `scripts/fmp.py` (`UNIVERSE_*` constants), not ad hoc flags
+typed in each session -- a bare `fmp.py screener` call applies them automatically:
+
+| Constant | Default | Purpose |
+|---|---|---|
+| `UNIVERSE_MARKET_CAP_FLOOR` | $300,000,000 | Excludes micro-caps; still opens up quality small/mid-caps (was implicitly $5B+ in early sessions before this was formalized) |
+| `UNIVERSE_PRICE_FLOOR` | $5.00 | Matches the hard-scope penny-stock exclusion exactly |
+| `UNIVERSE_SHARE_VOLUME_FLOOR` | 200,000 shares/day | Coarse pre-filter on the screener call itself |
+| `UNIVERSE_MIN_AVG_DOLLAR_VOL20` | $3,000,000/day | The real liquidity gate -- checked post-screener via `fmp.py indicators`'s `liquidity_pass` field, since dollar volume (not raw share count) is what actually governs slippage and manipulation risk. Required alongside `trend_template_pass` and `rr_pass` before any buy. |
+
+`isEtf=false` / `isFund=false` / `isActivelyTrading=true` are hardcoded, not overridable. All four
+`UNIVERSE_*` floors can be overridden per-call via explicit `--marketCapMoreThan` etc. flags for a
+one-off query (e.g. deliberately widening or narrowing the universe) — but the defaults are what
+an actual scheduled scan gets if it just calls `fmp.py screener` plainly. The earnings guard and
+mandatory news check (see below) cover the binary-event and headline-risk parts of hard scope.

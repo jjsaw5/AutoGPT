@@ -245,6 +245,21 @@ def test_news_scan_handles_empty_input(tmp):
     record("fmp: news keyword scan handles an empty article list", PASS if ok else FAIL, json.dumps(result))
 
 
+def test_liquidity_check_passes_above_floor(tmp):
+    ok = fmp_module.check_liquidity(5_000_000) is True
+    record("fmp: liquidity check passes above the $3M/day floor", PASS if ok else FAIL, "avg_dollar_vol20=5,000,000")
+
+
+def test_liquidity_check_fails_below_floor(tmp):
+    ok = fmp_module.check_liquidity(500_000) is False
+    record("fmp: liquidity check fails below the $3M/day floor", PASS if ok else FAIL, "avg_dollar_vol20=500,000")
+
+
+def test_liquidity_check_fails_closed_on_missing_data(tmp):
+    ok = fmp_module.check_liquidity(None) is False
+    record("fmp: liquidity check fails closed on missing data", PASS if ok else FAIL, "avg_dollar_vol20=None")
+
+
 def test_fmp_key_missing_is_graceful(tmp):
     proc = run_fmp(tmp, "regime")
     if proc.returncode == 0:
@@ -304,6 +319,9 @@ def main():
         test_news_scan_flags_real_negative_catalyst(tmp)
         test_news_scan_clean_when_no_keywords_present(tmp)
         test_news_scan_handles_empty_input(tmp)
+        test_liquidity_check_passes_above_floor(tmp)
+        test_liquidity_check_fails_below_floor(tmp)
+        test_liquidity_check_fails_closed_on_missing_data(tmp)
 
     with tempfile.TemporaryDirectory(prefix="genesis-selftest-fmp-") as tmp_str2:
         tmp2 = Path(tmp_str2)
