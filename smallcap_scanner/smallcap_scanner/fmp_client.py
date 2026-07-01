@@ -100,7 +100,12 @@ class FMPClient:
     def _quote_one(self, symbol: str) -> dict | None:
         try:
             data = self._get("quote", {"symbol": symbol})
-        except FMPError as exc:
+        except (FMPError, requests.RequestException) as exc:
+            # requests.RequestException (e.g. a 429 that persists past the
+            # one retry in _get, which falls through to raise_for_status())
+            # must be caught here too, not just FMPError — otherwise a single
+            # stubborn symbol propagates out of the caller's loop and wipes
+            # out every other symbol already queued behind it.
             log.debug("quote lookup failed for %s: %s", symbol, exc)
             return None
         if not isinstance(data, list) or not data:
