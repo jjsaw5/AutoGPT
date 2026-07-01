@@ -18,6 +18,38 @@ A symbol passes the trend template when ALL of the following hold (computed by
 Names that fail the trend template are never buy candidates, regardless of how good their
 short-term setup looks — Genesis, Exodus, and Turtle all require it as a floor.
 
+## Reward:Risk formula (the SKILL.md §7 "R:R >= 2:1" gate)
+
+This used to be left to per-scan judgment, which meant two runs on the same borderline name could
+reasonably reach different conclusions. It's now computed deterministically by
+`fmp.py indicators SYM` (`compute_reward_risk()` in `scripts/fmp.py`) and returned as
+`reward_pct` / `risk_pct` / `rr_ratio` / `rr_pass` / `reward_method`:
+
+- **Risk** is always the 10% initial stop (`SKILL.md` §0's `INITIAL_STOP`) — `risk_pct = 10.0`.
+- **Reward** depends on how much room is left before the next real resistance:
+  - If price is **more than 3% below its 52-week high** and not confirmed breaking out: reward is
+    the % distance up to that prior high (the classic "room to the last swing high" measure).
+  - If price is **within 3% of its 52-week high**, or `breakout20`/`breakout55` is true: there's no
+    overhead resistance left to measure, so reward is instead **3x ATR20** (as a % of price) — a
+    rough proxy for near-term continuation room, not a promise of a specific target.
+- `rr_ratio = reward_pct / risk_pct`; the buy gate requires `rr_ratio >= 2.0` (`rr_pass`).
+- If 52-week-high or ATR20 data is missing, the function returns `null` — treat that as a gate
+  **failure**, never substitute a guessed number (SKILL.md's honesty rule applies here too).
+
+Worked examples from the 2026-07-01 $1,000 paper-simulation run (see `state/journal.jsonl` /
+session notes for the full comparison):
+
+| Symbol | Price | 52wk high | Distance to high | Method used | Reward% | R:R | Passes 2:1? |
+|---|---|---|---|---|---|---|---|
+| INTC | $127.02 | $142.35 | -10.77% (not near) | distance-to-high | 10.77% | 1.08:1 | No |
+| NBIS | $229.18 | $299.86 | -23.57% (not near) | distance-to-high | 23.57% | 2.36:1 | **Yes** |
+| BAC  | $58.36  | $59.20  | -1.42% (near/at high) | 3x ATR20 | 6.20% | 0.62:1 | No |
+
+The 3% "near-high" threshold and the 3x ATR multiple (`RR_NEAR_HIGH_THRESHOLD_PCT` /
+`RR_ATR_REWARD_MULTIPLE` in `scripts/fmp.py`) are CUSTOMIZE constants like everything else in the
+active growth profile — backtest before changing them, and expect the pass/fail line to move
+candidates like INTC (very close to 2:1 already) across it.
+
 ## Genesis engine — "own the leaders"
 
 Primary entry style. Discovery: `fmp.py screener` for a quality, liquid US universe (real

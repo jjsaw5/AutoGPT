@@ -36,6 +36,49 @@ TIMEOUT_SECONDS = 20
 
 BENCHMARKS = ["SPY", "QQQ", "IWM"]
 
+# R:R formula constants (SKILL.md §7's "R:R >= 2:1" gate) -- CUSTOMIZE/backtest before changing.
+# Mirrors SKILL.md §0's INITIAL_STOP (~10% below entry) as the risk leg. The reward leg has two
+# regimes: a name still meaningfully below its 52-week high is measured against that prior high
+# (the next real resistance); a name already at/near its high or breaking out has no overhead
+# resistance to measure, so reward is instead projected as a multiple of ATR20 (a rough proxy for
+# expected near-term continuation, not a promise).
+RR_STOP_PCT = 10.0
+RR_NEAR_HIGH_THRESHOLD_PCT = 3.0
+RR_ATR_REWARD_MULTIPLE = 3.0
+RR_MIN_RATIO = 2.0
+
+
+def compute_reward_risk(price, high52, atr20, breakout20=False, breakout55=False,
+                         stop_pct=RR_STOP_PCT,
+                         near_high_threshold_pct=RR_NEAR_HIGH_THRESHOLD_PCT,
+                         atr_multiple=RR_ATR_REWARD_MULTIPLE):
+    """Deterministic reward:risk for the SKILL.md §7 buy gate. Pure function (no I/O) so it's
+    unit-testable offline in selftest.py. Returns None if there isn't enough data to judge it --
+    callers must treat that as a gate FAILURE (SKILL.md's honesty rule: never guess a level)."""
+    if price is None or not price or high52 is None or not high52:
+        return None
+
+    pct_from_high = (price - high52) / high52 * 100  # <= 0; 0 means at/above the 52wk high
+    near_high_or_breaking_out = pct_from_high >= -near_high_threshold_pct or breakout20 or breakout55
+
+    if near_high_or_breaking_out:
+        if atr20 is None:
+            return None
+        reward_pct = atr_multiple * (atr20 / price) * 100
+        reward_method = f"{atr_multiple}x ATR20 (price at/near its 52wk high or breaking out)"
+    else:
+        reward_pct = -pct_from_high
+        reward_method = "distance to prior 52wk high"
+
+    rr_ratio = round(reward_pct / stop_pct, 2) if stop_pct else None
+    return {
+        "reward_pct": round(reward_pct, 2),
+        "risk_pct": stop_pct,
+        "rr_ratio": rr_ratio,
+        "rr_pass": rr_ratio is not None and rr_ratio >= RR_MIN_RATIO,
+        "reward_method": reward_method,
+    }
+
 
 def out(obj):
     print(json.dumps(obj, indent=2, sort_keys=True))
@@ -286,6 +329,8 @@ def cmd_indicators(args):
     except SystemExit:
         pass
 
+    rr = compute_reward_risk(price, hi52, atr20, breakout20, breakout55)
+
     out({
         "symbol": symbol,
         "price": price,
@@ -299,6 +344,11 @@ def cmd_indicators(args):
         "pct_from_52wk_low": pct_from_lo,
         "breakout20": breakout20,
         "breakout55": breakout55,
+        "reward_pct": rr["reward_pct"] if rr else None,
+        "risk_pct": rr["risk_pct"] if rr else None,
+        "rr_ratio": rr["rr_ratio"] if rr else None,
+        "rr_pass": rr["rr_pass"] if rr else False,
+        "reward_method": rr["reward_method"] if rr else None,
         "atr20": atr20,
         "atr14": atr14,
         "ret63d": ret63d,

@@ -22,6 +22,9 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 OPS = SCRIPT_DIR / "ops.py"
 FMP = SCRIPT_DIR / "fmp.py"
 
+sys.path.insert(0, str(SCRIPT_DIR))
+import fmp as fmp_module  # noqa: E402 -- pure-function import for offline unit tests below
+
 PASS, FAIL, SKIP = "PASS", "FAIL", "SKIP"
 results = []
 
@@ -152,6 +155,51 @@ def test_ops_ledger_validation(tmp):
     record("ops: ledger-add rejects a record missing required fields", PASS if ok else FAIL, proc.stdout.strip())
 
 
+def test_rr_far_below_high_uses_distance_method(tmp):
+    # INTC-shaped case from the 2026-07-01 $1,000 dry run: 10.77% off the 52wk high, no breakout.
+    rr = fmp_module.compute_reward_risk(price=127.02, high52=142.35, atr20=11.007)
+    ok = (
+        rr is not None
+        and rr["reward_method"] == "distance to prior 52wk high"
+        and abs(rr["reward_pct"] - 10.77) < 0.05
+        and rr["rr_ratio"] == 1.08
+        and rr["rr_pass"] is False
+    )
+    record("fmp: R:R uses distance-to-high when not near the high", PASS if ok else FAIL, json.dumps(rr))
+
+
+def test_rr_far_below_high_clears_2to1(tmp):
+    # NBIS-shaped case: 23.57% off the high clears the 2:1 bar on the distance method alone.
+    rr = fmp_module.compute_reward_risk(price=229.18, high52=299.86, atr20=28.945)
+    ok = rr is not None and rr["rr_ratio"] == 2.36 and rr["rr_pass"] is True
+    record("fmp: R:R clears 2:1 when reward >= 2x the 10% stop", PASS if ok else FAIL, json.dumps(rr))
+
+
+def test_rr_near_high_switches_to_atr_method(tmp):
+    # BAC-shaped case: only 1.42% off the high -- distance method would wrongly show ~0 reward,
+    # so it must switch to the ATR-multiple projection instead.
+    rr = fmp_module.compute_reward_risk(price=58.36, high52=59.2, atr20=1.206)
+    ok = rr is not None and "ATR20" in rr["reward_method"] and rr["rr_ratio"] == 0.62
+    record("fmp: R:R switches to ATR-multiple method near the 52wk high", PASS if ok else FAIL, json.dumps(rr))
+
+
+def test_rr_breakout_forces_atr_method_even_if_not_literally_near_high(tmp):
+    rr = fmp_module.compute_reward_risk(price=100.0, high52=95.0, atr20=4.0, breakout20=True)
+    ok = rr is not None and "ATR20" in rr["reward_method"]
+    record("fmp: R:R uses ATR-multiple method on a confirmed breakout", PASS if ok else FAIL, json.dumps(rr))
+
+
+def test_rr_missing_data_fails_closed(tmp):
+    rr_no_high = fmp_module.compute_reward_risk(price=100.0, high52=None, atr20=5.0)
+    rr_no_atr_near_high = fmp_module.compute_reward_risk(price=100.0, high52=99.0, atr20=None)
+    ok = rr_no_high is None and rr_no_atr_near_high is None
+    record(
+        "fmp: R:R returns None (gate fails) on missing data instead of guessing",
+        PASS if ok else FAIL,
+        json.dumps({"rr_no_high": rr_no_high, "rr_no_atr_near_high": rr_no_atr_near_high}),
+    )
+
+
 def test_fmp_key_missing_is_graceful(tmp):
     proc = run_fmp(tmp, "regime")
     if proc.returncode == 0:
@@ -203,6 +251,11 @@ def main():
         test_ops_consecutive_loss_halt(tmp)
         test_ops_daily_buy_cap(tmp)
         test_ops_ledger_validation(tmp)
+        test_rr_far_below_high_uses_distance_method(tmp)
+        test_rr_far_below_high_clears_2to1(tmp)
+        test_rr_near_high_switches_to_atr_method(tmp)
+        test_rr_breakout_forces_atr_method_even_if_not_literally_near_high(tmp)
+        test_rr_missing_data_fails_closed(tmp)
 
     with tempfile.TemporaryDirectory(prefix="genesis-selftest-fmp-") as tmp_str2:
         tmp2 = Path(tmp_str2)

@@ -23,7 +23,7 @@ PAPER_MODE   = true           #   completed a manual dry run, and deliberately s
 AUTO_BUY     = false          #   `ops.py live on` yourself. ops.py's own `live_trading`
 AUTO_SELL_LIMIT = false       #   flag (state/control.json) is the actual gate the scan
 REQUIRE_HUMAN_CONFIRMATION = true   #   obeys — these flags must always agree with it.
-DEFAULT_TRADE_SIZE = $<CUSTOMIZE>   # e.g. lesser of $X and N% of equity
+DEFAULT_TRADE_SIZE = lesser of $1,000 and 20% of equity   # see §7 SIZING for the derivation
 AGENTIC_ACCOUNT = resolve at runtime: get_accounts -> the account with agentic_allowed=true
 ```
 
@@ -50,7 +50,9 @@ INITIAL_STOP   = ~10% below entry
 FIRST_TARGET   = +10% -> sell ~40% to de-risk
 RUNNER         = remainder rides, NO upside cap, trailing stop ~25% off highest close
 PYRAMID        = add to WINNERS only, each ~1x ATR(20) above last add, up to 3 units total
-POSITIONS      = up to 8 (rotating momentum book)
+POSITIONS      = up to 8 (rotating momentum book; ~5 fully-invested slots at the $5,000
+                 funding level assumed by §7's sizing cap -- fewer, larger positions until
+                 the account is funded past that)
 ```
 Edit these only deliberately; backtest before changing.
 
@@ -121,16 +123,34 @@ PYRAMID winners (add a unit each ~1x ATR above the last add, up to 3 units) — 
 
 ## 7. BUY DISCOVERY (Genesis / Exodus / Turtle) — heavily gated
 Run both engines; Turtle only if it also passes Genesis-quality. Score 0–10 each; BUY only if ALL:
-confidence >=7, R:R >=2:1, market filter passes, stop defined, price <=8% above ideal entry, confirmed
-cash, tradability OK, order review clean, no safety-rule fail, within hours, not a duplicate.
+confidence >=7, R:R >=2:1 (computed by `fmp.py indicators` -- see R:R FORMULA below, never eyeballed),
+market filter passes, stop defined, price <=8% above ideal entry, confirmed cash, tradability OK, order
+review clean, no safety-rule fail, within hours, not a duplicate.
 PRIMARY ENTRY: own the highest relative-strength names that pass the full trend template; a fresh
 breakout is a bonus, not a prerequisite.
-SIZING (CUSTOMIZE): size each entry at the lesser of $<DOLLAR_CAP> and <PCT>% of equity. State the
-per-trade risk $ and % in every buy report.
+
+R:R FORMULA (deterministic, computed by `fmp.py indicators SYM` -- see references/playbooks.md for the
+full derivation): risk = the 10% initial stop. Reward = distance to the prior 52-week high, UNLESS the
+name is already within 3% of that high or confirmed breaking out (`breakout20`/`breakout55`), in which
+case reward = 3x ATR20 as a measured-continuation proxy instead (there's no overhead resistance left to
+measure against). `rr_ratio = reward_pct / 10`; the gate needs `rr_ratio >= 2.0` (`rr_pass` in the JSON
+output). Missing 52wk-high or ATR data -> the function returns null -> treat as a gate FAILURE, never
+guess a level to force a pass.
+
+SIZING: size each entry at the lesser of $1,000 and 20% of equity (derived from RISK_PER_TRADE=2% of
+equity / INITIAL_STOP=10%, at the ~$5,000 account funding level this was tuned for: 2% of $5,000 = $100
+risk / 10% stop = $1,000 position = 20% of $5,000 -- the two caps coincide by design at that funding
+level. Below $5,000 equity the 20% cap binds and shrinks the position; above it, the flat $1,000 cap
+binds so one name's size doesn't keep growing unchecked as the account compounds -- raise it deliberately
+if you want larger positions at a bigger account size). State the per-trade risk $ and % in every buy
+report.
 MANAGEABILITY / WHOLE-SHARES-ONLY: buy whole shares only on new entries (>=2 shares), so a protective
 order can actually rest. If >=2 whole shares don't fit the cap, pick a lower-priced equivalent or skip.
-CAPS (CUSTOMIZE): max 1 replacement per de-risk event, <=3 new buys/day, <=$<CAP>/name and <=<PCT>%/name
-on the initial entry, <=3 per sector, 3–8 total positions. No margin, no unsettled capital.
+On a small account, this can rule out an otherwise-excellent leader (e.g. a $600+ stock needs $1,200+
+for 2 shares, over the $1,000 cap) -- that's the cap doing its job, not a bug to work around by dropping
+to 1 share.
+CAPS: max 1 replacement per de-risk event, <=3 new buys/day, <=$1,000/name and <=20%/name on the initial
+entry, <=3 per sector, 3–8 total positions. No margin, no unsettled capital.
 HARD SCOPE — NEVER without explicit manual approval: options, shorting, margin, leveraged ETFs, crypto,
 futures, penny stocks (<$5), low-volume pumps, biotech binary gambles, averaging down, after-hours.
 ADVISORY SENSORS inform but never decide: blended-RS rank, rotation-out flags, correlation clusters,
