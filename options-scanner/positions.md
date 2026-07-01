@@ -32,9 +32,22 @@
 2. TIME-STOP (MONITORED, DATE): CLOSE ON/BEFORE 2026-08-02 (2d before ER 8/4).
 3. THESIS EXIT: close if PFE reclaims 50-DMA (~$25.8).
 
+## KDP long CALL  [OPENED 2026-07-01 — FIRST CALL; calls enabled per user override]
+- Contract: KDP 2026-08-21 $33.00 CALL (long_call)
+- Qty: 1 | Fill: $1.70 | Cost: $170.04 incl fees | MAX LOSS = $170.04
+- option_id: 344816b1-f502-48db-b49c-e06a64f7c44b
+- Thesis: KDP STRONG (golden cross + 20d breakout, RSI 68). Score 12.50. BULLISH —
+  intentional counterweight to the all-bearish put book (diversifies direction).
+- Gates: delta +0.586, OI 3056, spread 9.0%, IV 28% (low = affordable, +3.9% breakeven). No overrides.
+### EXITS
+1. TAKE-PROFIT (resting): GTC sell_to_close @ $3.40 (+100%) — order 6a45329a-9312-4c7b-be30-4690073c969e
+2. TIME-STOP (MONITORED, DATE): CLOSE ON/BEFORE 2026-08-04 (2d before ER 8/6).
+3. THESIS EXIT (CALL): close if KDP LOSES its 50-DMA.
+
 ## CAP USAGE
-- Open puts: 3 / 5 (MAX_OPEN).
+- Open puts: 3 / 5 (MAX_OPEN). Open calls: 1.
 - PUT sleeve used: NIO $48 + JD $178 + PFE $99 = $325 / $400  ->  ROOM = ~$75.
+- CALL sleeve used: KDP $170 / $400  ->  ROOM = ~$230. (Calls now LIVE-tradeable per user override 7/1.)
 - BP: $370 settled (+$119 pending from BILI trade, clears ~7/2). Sleeve (not BP) is the binding limit.
 - NOTE: account grew to ~$846 via deposits; $400 sleeve cap now ~47% of account. Consider
   a deliberate cap resize if scaling up (discussed, not yet changed).

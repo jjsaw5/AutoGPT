@@ -3,8 +3,9 @@ Updated: 2026-06-26 ~10:0x ET. Account: Agentic ••2861 (992952861), cash, op
 
 ## DIRECTIONS
 - PUT side  (weakness scan): LIVE-TRADEABLE via safety wrapper.
-- CALL side (strength scan): SCAN-ONLY — wrapper must REFUSE to place call orders.
-  (Overrides original "never calls" rail only for SCANNING, not execution.)
+- CALL side (strength scan): LIVE-TRADEABLE as of 2026-07-01 (user override — flipped from
+  scan-only; overrides the original "never calls" rail). First call: KDP $33 8/21.
+  Separate CALL_SLEEVE_CAP = $400. Rationale: bullish calls diversify the all-bearish put book.
 
 ## SIZING / CAPS  (user instruction)
 - RISK_PER_TRADE = $350 (max loss on a single option = debit paid).
