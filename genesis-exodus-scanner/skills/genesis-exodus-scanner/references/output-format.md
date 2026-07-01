@@ -44,9 +44,11 @@ Open orders:           <n>
 Candidates considered: <n> (Genesis: <n>, Exodus: <n>, Turtle: <n>)
 Top candidate:         <SYMBOL>  score=<n>/10  R:R=<rr_ratio>:1 (<reward_method> from `fmp.py indicators`)
   Entry:  <$price>   Stop: <$level> (-10%)   Reward target used for R:R: <$level/description>
-  Size:   <n> shares  (~$<value>, capped at lesser of $1,000 / 20% of equity, risk $<value> / <pct>% to stop)
+  Size:   <n> shares  (~$<value>, capped at lesser of $2,000 / 20% of equity, risk $<value> / <pct>% to stop)
+  News check (mandatory): <PASS | FAIL — WATCHLIST>  keyword flag: <clean | flagged: [<keywords>]>
+    Reason: <one-line judgment -- why this is/isn't a company-specific negative catalyst>
   Gates:  confidence>=7 <pass/fail>  R:R>=2:1 (rr_pass) <pass/fail>  market filter <pass/fail>
-          price<=8% above ideal entry <pass/fail>  earnings clear <pass/fail>
+          price<=8% above ideal entry <pass/fail>  earnings clear <pass/fail>  news check <pass/fail>
           order review <clean/warned>  duplicate check <pass/fail>
 Decision: <BUY PLACED | NO TRADE — <reason> | WATCHLIST — <reason>>
 

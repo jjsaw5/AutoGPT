@@ -404,11 +404,50 @@ def cmd_earnings_multi(args):
 
 # --------------------------------------------------------- advisory sensors
 
+# Keyword-flag assist for the SKILL.md §7 mandatory news check. This is deliberately NOT a verdict:
+# it's a cheap, deterministic first pass that flags articles worth reading closely. It can both
+# false-positive (a keyword appearing in an unrelated or even positive context) and false-negative
+# (real bad news phrased without any listed word) -- the LLM must still read the actual headlines
+# and make the final pass/fail call. CUSTOMIZE/extend this list as real scans surface misses.
+NEWS_NEGATIVE_KEYWORDS = [
+    "lawsuit", "investigation", "probe", "downgrade", "guidance cut", "cuts guidance",
+    "cut its forecast", "misses estimates", "miss estimates", "recall", "fraud", "resigns",
+    "resignation", "scandal", "competitor", "competition", "threat", "layoffs", "bankruptcy",
+    "delisting", "restatement", "warns", "warning", "plunge", "crash", "crashing", "tumble",
+    "tumbles", "sinks", "slashed", "slumps", "slump", "loses customer", "customer loss",
+    "antitrust", "regulatory action", "class action", "short seller", "short-seller",
+    "accounting issue", "data breach", "recession",
+]
+
+
+def scan_news_for_negative_catalysts(articles, keywords=NEWS_NEGATIVE_KEYWORDS):
+    """Pure function (no I/O) so it's unit-testable offline in selftest.py. `articles` is the raw
+    list of {"title":..., "text":...} dicts as returned by the FMP news endpoint."""
+    matched_articles = []
+    all_matched_keywords = set()
+    for article in articles or []:
+        haystack = f"{article.get('title', '')} {article.get('text', '')}".lower()
+        hits = sorted({kw for kw in keywords if kw in haystack})
+        if hits:
+            matched_articles.append({"title": article.get("title"), "matched_keywords": hits})
+            all_matched_keywords.update(hits)
+    return {
+        "flagged": bool(matched_articles),
+        "matched_keywords": sorted(all_matched_keywords),
+        "matched_articles": matched_articles,
+    }
+
+
 def cmd_news(args):
     results = {}
     for symbol in args.symbols:
         symbol = symbol.upper()
-        results[symbol] = _get("news/stock", {"symbols": symbol, "limit": 10}, use_cache=True)
+        articles = _get("news/stock", {"symbols": symbol, "limit": 10}, use_cache=True)
+        articles_list = articles if isinstance(articles, list) else []
+        results[symbol] = {
+            "articles": articles,
+            "negative_keyword_scan": scan_news_for_negative_catalysts(articles_list),
+        }
     out(results)
 
 

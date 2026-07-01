@@ -23,7 +23,7 @@ PAPER_MODE   = true           #   completed a manual dry run, and deliberately s
 AUTO_BUY     = false          #   `ops.py live on` yourself. ops.py's own `live_trading`
 AUTO_SELL_LIMIT = false       #   flag (state/control.json) is the actual gate the scan
 REQUIRE_HUMAN_CONFIRMATION = true   #   obeys — these flags must always agree with it.
-DEFAULT_TRADE_SIZE = lesser of $1,000 and 20% of equity   # see §7 SIZING for the derivation
+DEFAULT_TRADE_SIZE = lesser of $2,000 and 20% of equity   # see §7 SIZING for the derivation
 AGENTIC_ACCOUNT = resolve at runtime: get_accounts -> the account with agentic_allowed=true
 ```
 
@@ -50,7 +50,7 @@ INITIAL_STOP   = ~10% below entry
 FIRST_TARGET   = +10% -> sell ~40% to de-risk
 RUNNER         = remainder rides, NO upside cap, trailing stop ~25% off highest close
 PYRAMID        = add to WINNERS only, each ~1x ATR(20) above last add, up to 3 units total
-POSITIONS      = up to 8 (rotating momentum book; ~5 fully-invested slots at the $5,000
+POSITIONS      = up to 8 (rotating momentum book; ~5 fully-invested slots at the $10,000
                  funding level assumed by §7's sizing cap -- fewer, larger positions until
                  the account is funded past that)
 ```
@@ -94,9 +94,13 @@ genuinely-hit profit-recovery sell.
 10. Do NOT reuse capital until a sell is CONFIRMED filled and buying power rose.
 11. If confirmed cash AND hours allow -> run buy discovery.
 12. Rank candidates; require confidence >=7/10 and R:R >=2:1. Advisory sensors sharpen the call.
+12b. MANDATORY NEWS CHECK on the top candidate (not optional, not skippable to save time/tokens):
+    run `fmp.py news SYM`, read the actual headlines, and record an explicit pass/fail + one-line
+    reason. See §7 NEWS CHECK for the full requirement -- a candidate that fails this is downgraded
+    to WATCHLIST, never bought, regardless of how clean every other gate looked.
 13. Review the order (`review_equity_order`) before any placement.
 14. Place only if every gate passes and mode allows. Record with `ops.py buy-record`.
-15. Log the scan + every decision to `state/journal.jsonl`.
+15. Log the scan + every decision to `state/journal.jsonl`, including the news-check verdict + reason.
 
 ## 3. ACCOUNT ACCESS CHECK
 `get_accounts` -> pick agentic_allowed=true -> `get_portfolio` + `get_equity_positions` +
@@ -124,10 +128,28 @@ PYRAMID winners (add a unit each ~1x ATR above the last add, up to 3 units) — 
 ## 7. BUY DISCOVERY (Genesis / Exodus / Turtle) — heavily gated
 Run both engines; Turtle only if it also passes Genesis-quality. Score 0–10 each; BUY only if ALL:
 confidence >=7, R:R >=2:1 (computed by `fmp.py indicators` -- see R:R FORMULA below, never eyeballed),
-market filter passes, stop defined, price <=8% above ideal entry, confirmed cash, tradability OK, order
-review clean, no safety-rule fail, within hours, not a duplicate.
+market filter passes, stop defined, price <=8% above ideal entry, confirmed cash, tradability OK,
+NEWS CHECK passed (see below -- mandatory, not advisory), order review clean, no safety-rule fail,
+within hours, not a duplicate.
 PRIMARY ENTRY: own the highest relative-strength names that pass the full trend template; a fresh
 breakout is a bonus, not a prerequisite.
+
+NEWS CHECK (mandatory, §2 step 12b): before sizing or placing ANY buy -- Genesis or Exodus-sourced --
+run `fmp.py news SYM` on the top candidate. The command auto-flags likely negative-catalyst keywords
+(`negative_keyword_scan` in its output) as a prompt to look closer, but the keyword flag is NOT the
+verdict -- it can both false-positive (e.g. "competitor being acquired" isn't bad news for SYM) and
+false-negative (real bad news phrased without a listed keyword). Read the actual headlines and decide:
+- FAIL (downgrade to WATCHLIST, do not buy) when the decline/setup is driven by company-specific bad
+  news: a competitive threat, guidance cut, lawsuit/investigation, executive scandal, lost major
+  customer/contract, accounting issue, etc. This applies even if every quantitative gate (trend
+  template, R:R, sizing) is clean -- a mechanically-perfect setup on a name with a real deteriorating
+  story is exactly the trap this check exists to catch (see references/playbooks.md for a worked
+  example: NBIS cleared every quant gate on 2026-07-01 but was news-checked to WATCHLIST because its
+  largest customer had just announced a competing product).
+- PASS (proceed to sizing) when there's no company-specific negative catalyst, or the move is
+  broad-market/sector-wide, valuation-only analyst chatter, or generic macro commentary.
+Record the pass/fail + one-line reason in the scan output and in `state/journal.jsonl` (§2 step 15) --
+this must never be silently skipped, including under time/token pressure on a scheduled run.
 
 R:R FORMULA (deterministic, computed by `fmp.py indicators SYM` -- see references/playbooks.md for the
 full derivation): risk = the 10% initial stop. Reward = distance to the prior 52-week high, UNLESS the
@@ -137,24 +159,25 @@ measure against). `rr_ratio = reward_pct / 10`; the gate needs `rr_ratio >= 2.0`
 output). Missing 52wk-high or ATR data -> the function returns null -> treat as a gate FAILURE, never
 guess a level to force a pass.
 
-SIZING: size each entry at the lesser of $1,000 and 20% of equity (derived from RISK_PER_TRADE=2% of
-equity / INITIAL_STOP=10%, at the ~$5,000 account funding level this was tuned for: 2% of $5,000 = $100
-risk / 10% stop = $1,000 position = 20% of $5,000 -- the two caps coincide by design at that funding
-level. Below $5,000 equity the 20% cap binds and shrinks the position; above it, the flat $1,000 cap
-binds so one name's size doesn't keep growing unchecked as the account compounds -- raise it deliberately
-if you want larger positions at a bigger account size). State the per-trade risk $ and % in every buy
-report.
+SIZING: size each entry at the lesser of $2,000 and 20% of equity (derived from RISK_PER_TRADE=2% of
+equity / INITIAL_STOP=10%, at the ~$10,000 account funding level this was tuned for: 2% of $10,000 =
+$200 risk / 10% stop = $2,000 position = 20% of $10,000 -- the two caps coincide by design at that
+funding level. Below $10,000 equity the 20% cap binds and shrinks the position; above it, the flat
+$2,000 cap binds so one name's size doesn't keep growing unchecked as the account compounds -- raise it
+deliberately if you want larger positions at a bigger account size). State the per-trade risk $ and %
+in every buy report.
 MANAGEABILITY / WHOLE-SHARES-ONLY: buy whole shares only on new entries (>=2 shares), so a protective
 order can actually rest. If >=2 whole shares don't fit the cap, pick a lower-priced equivalent or skip.
-On a small account, this can rule out an otherwise-excellent leader (e.g. a $600+ stock needs $1,200+
-for 2 shares, over the $1,000 cap) -- that's the cap doing its job, not a bug to work around by dropping
+On a small account, this can rule out an otherwise-excellent leader (e.g. a $1,200+ stock needs $2,400+
+for 2 shares, over the $2,000 cap) -- that's the cap doing its job, not a bug to work around by dropping
 to 1 share.
-CAPS: max 1 replacement per de-risk event, <=3 new buys/day, <=$1,000/name and <=20%/name on the initial
+CAPS: max 1 replacement per de-risk event, <=3 new buys/day, <=$2,000/name and <=20%/name on the initial
 entry, <=3 per sector, 3–8 total positions. No margin, no unsettled capital.
 HARD SCOPE — NEVER without explicit manual approval: options, shorting, margin, leveraged ETFs, crypto,
 futures, penny stocks (<$5), low-volume pumps, biotech binary gambles, averaging down, after-hours.
 ADVISORY SENSORS inform but never decide: blended-RS rank, rotation-out flags, correlation clusters,
-breadth, news catalysts. The LLM remains the decision-maker.
+breadth. The LLM remains the decision-maker. (News is the one exception promoted to a MANDATORY check
+above -- still an LLM judgment call, not a coded boolean gate, but no longer optional to run.)
 
 ## 8. STOP / RISK MONITORING
 Every new position needs a stop BEFORE entry (~10% below; tighter if structure demands). Never widen a

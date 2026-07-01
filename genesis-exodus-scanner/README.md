@@ -55,8 +55,10 @@ cp -r scheduled-tasks/genesis-quick-check   ~/.claude/scheduled-tasks/genesis-qu
    ```
    ops.py checks run fully offline. fmp.py's live checks (regime, screener) are skipped
    gracefully if no key is configured yet, and run for real once one is.
-6. Fill in the `<CUSTOMIZE>` values in `skills/genesis-exodus-scanner/SKILL.md` §0/§7
-   (trade sizing, dollar/percent caps) to your own risk tolerance. Backtest before trusting them.
+6. Review `skills/genesis-exodus-scanner/SKILL.md` §0/§7 — sizing (lesser of $2,000 / 20% of
+   equity) and the R:R formula are filled in, tuned for an assumed ~$10,000 account funding level
+   (see `references/playbooks.md`). Re-derive them if you fund at a meaningfully different amount,
+   and backtest before trusting any of it.
 7. Trigger one manual run and read the SCAN REPORT (`references/output-format.md`) to confirm
    every gate behaves as expected — **before** enabling live trading.
 8. Only once you've done all of the above: `python3 skills/genesis-exodus-scanner/scripts/ops.py live on`

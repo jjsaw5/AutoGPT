@@ -77,11 +77,29 @@ remain structurally sound, with a stop just below the day's low or a recent high
 
 Score 0–10 on:
 - Quality of the underlying trend (still must pass or nearly pass the trend template).
-- Reason for the drop: prefer broad-market/sector-driven selloffs over company-specific bad news
-  (`fmp.py news SYM` as an advisory read — a name gapping down on negative company news is usually
-  a pass, not a rebound buy).
+- Reason for the drop: prefer broad-market/sector-driven selloffs over company-specific bad news.
+  This is no longer just a scoring input — SKILL.md §2 step 12b / §7 NEWS CHECK makes running
+  `fmp.py news SYM` and recording an explicit pass/fail judgment MANDATORY for the top candidate
+  before any buy, Exodus or Genesis. A name gapping down on negative company-specific news is
+  disqualified to WATCHLIST, full stop, no matter how clean the rest of the setup is.
 - R:R from a tight stop just under the day's low/recent structure to a realistic near-term target.
 - Not within the earnings guard window.
+
+### Worked example: why the news check is mandatory, not advisory
+
+On 2026-07-01, a $5,000 paper simulation ran NBIS (Nebius Group) through every quantitative gate:
+trend template pass, RS vs. SPY of 106 (near the top of the universe), R:R of 2.36:1 (cleared the
+2:1 bar), earnings clear (36 trading days out), no sector-cap conflict, affordable at the sizing
+cap. On paper, a clean BUY. But `fmp.py news NBIS` (and a plain read of the headlines) showed the
+day's -17% drop was driven by Meta — Nebius's largest customer — announcing it was building
+competing in-house AI cloud infrastructure: a direct, company-specific competitive threat, not a
+broad selloff. The correct call was WATCHLIST, not BUY, despite every other gate passing cleanly.
+`fmp.py news SYM` also returns a `negative_keyword_scan` field (see `scripts/fmp.py`'s
+`scan_news_for_negative_catalysts()`) that would have auto-flagged this case (matched "threat" and
+"tumble" across two of the real headlines) — a cheap first-pass prompt to look closer, not a
+verdict. The keyword flag can miss real bad news phrased without a listed word, and can also flag
+harmless mentions, so reading the actual headlines and writing down the one-line reason is still
+required every time, not just when the flag fires.
 
 ## Turtle engine — breakout confirmation
 

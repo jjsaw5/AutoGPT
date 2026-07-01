@@ -200,6 +200,51 @@ def test_rr_missing_data_fails_closed(tmp):
     )
 
 
+def test_news_scan_flags_real_negative_catalyst(tmp):
+    # Actual NBIS headlines from the 2026-07-01 dry run -- this is the exact case the mandatory
+    # news check exists to catch: every quant gate was clean, but the drop was company-specific.
+    articles = [
+        {
+            "title": "Nebius stock is crashing, and it has its biggest customer to blame",
+            "text": "Nebius Group (NBIS) stock is under immense pressure this morning mostly "
+                    "because of aggressive new competitive threat from its biggest customer.",
+        },
+        {
+            "title": "CoreWeave, Nebius shares tumble as Meta stands to become a fresh threat in the cloud",
+            "text": "Artificial-intelligence infrastructure providers like CoreWeave and Nebius "
+                    "Group may soon face stiff competition from a new kid on the block: Meta.",
+        },
+        {
+            "title": "Russell 2000 Kicks off 3rd Quarter With Record High",
+            "text": "Stocks are firmly higher as July trading gets underway.",
+        },
+    ]
+    result = fmp_module.scan_news_for_negative_catalysts(articles)
+    ok = (
+        result["flagged"] is True
+        and "threat" in result["matched_keywords"]
+        and "tumble" in result["matched_keywords"]
+        and len(result["matched_articles"]) == 2  # the record-high article shouldn't match
+    )
+    record("fmp: news keyword scan flags the real NBIS negative-catalyst headlines", PASS if ok else FAIL, json.dumps(result))
+
+
+def test_news_scan_clean_when_no_keywords_present(tmp):
+    articles = [
+        {"title": "Company announces new product line", "text": "Sales expected to grow steadily."},
+        {"title": "Analyst maintains buy rating", "text": "Price target raised to $150."},
+    ]
+    result = fmp_module.scan_news_for_negative_catalysts(articles)
+    ok = result["flagged"] is False and result["matched_keywords"] == [] and result["matched_articles"] == []
+    record("fmp: news keyword scan stays clean with no negative-catalyst language", PASS if ok else FAIL, json.dumps(result))
+
+
+def test_news_scan_handles_empty_input(tmp):
+    result = fmp_module.scan_news_for_negative_catalysts([])
+    ok = result["flagged"] is False and result["matched_keywords"] == []
+    record("fmp: news keyword scan handles an empty article list", PASS if ok else FAIL, json.dumps(result))
+
+
 def test_fmp_key_missing_is_graceful(tmp):
     proc = run_fmp(tmp, "regime")
     if proc.returncode == 0:
@@ -256,6 +301,9 @@ def main():
         test_rr_near_high_switches_to_atr_method(tmp)
         test_rr_breakout_forces_atr_method_even_if_not_literally_near_high(tmp)
         test_rr_missing_data_fails_closed(tmp)
+        test_news_scan_flags_real_negative_catalyst(tmp)
+        test_news_scan_clean_when_no_keywords_present(tmp)
+        test_news_scan_handles_empty_input(tmp)
 
     with tempfile.TemporaryDirectory(prefix="genesis-selftest-fmp-") as tmp_str2:
         tmp2 = Path(tmp_str2)
