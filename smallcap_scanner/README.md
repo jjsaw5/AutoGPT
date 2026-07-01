@@ -149,8 +149,9 @@ python -m smallcap_scanner fundamentals [--mock] [--top N] [--json] [--out FILE]
 python -m smallcap_scanner social       [--mock] [--top N] [--json] [--out FILE]
 python -m smallcap_scanner combined     [--mock] [--top N] [--json] [--out FILE]
                                          [--from-file FILE] [--social-limit N]
+                                         [--show-out-of-range]
 python -m smallcap_scanner all          [--mock] [--top N] [--json] [--out FILE]
-                                         [--social-limit N]
+                                         [--social-limit N] [--show-out-of-range]
 ```
 
 - `--mock` — run on bundled offline sample data (no keys).
@@ -161,8 +162,12 @@ python -m smallcap_scanner all          [--mock] [--top N] [--json] [--out FILE]
 - `--from-file FILE` (combined only) — reuse a previously saved `social --out`
   result instead of running a fresh social scan.
 - `--social-limit N` (combined/all) — how many top trending tickers (by
-  mention growth) get cross-referenced against FMP. Default: `SOCIAL_FMP_LIMIT`
-  env var, 50.
+  mention growth, after skipping known large-caps) get cross-referenced
+  against FMP. Default: `SOCIAL_FMP_LIMIT` env var, 50.
+- `--show-out-of-range` (combined/all) — by default, tickers outside the
+  configured price/market-cap band are hidden from `combined`'s output (e.g.
+  AMD/SPY showing up because they're broadly popular on Reddit, not because
+  they fit the thesis). Pass this to see them too.
 - `--quiet` — suppress the banner. `-v`/`--verbose` — debug logging.
 
 ## How scoring works
@@ -220,6 +225,7 @@ smallcap_scanner/
   models.py             dataclasses passed between stages
   fmp_client.py         FMP /stable screener + quote wrapper
   apewisdom_client.py   no-auth ApeWisdom mention/upvote aggregator
+  known_largecaps.py    maintained large-cap/ETF blocklist (pre-filters stage 3)
   reddit_client.py      PRAW OAuth scan — for subs ApeWisdom doesn't track
   reddit_aggregate.py   shared post-aggregation logic (PRAW + mock data)
   ticker_extract.py     cashtag/bare-ticker parsing with stopwords

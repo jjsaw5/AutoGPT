@@ -154,6 +154,20 @@ class Config:
     social_fmp_limit: int = field(
         default_factory=lambda: _get_int("SOCIAL_FMP_LIMIT", 50)
     )
+    # Skip known large/mega-caps (known_largecaps.py) before spending the
+    # social_fmp_limit budget on names that would just get flagged
+    # out-of-range anyway. Disable to see the raw social ranking unfiltered.
+    filter_large_caps: bool = field(
+        default_factory=lambda: os.getenv("FILTER_LARGE_CAPS", "true").lower()
+        not in ("false", "0", "no")
+    )
+    extra_large_cap_exclusions: List[str] = field(
+        default_factory=lambda: [
+            s.strip().upper()
+            for s in os.getenv("EXTRA_LARGE_CAP_EXCLUSIONS", "").split(",")
+            if s.strip()
+        ]
+    )
 
     thresholds: ScreenThresholds = field(default_factory=ScreenThresholds)
 
@@ -171,6 +185,12 @@ class Config:
     @property
     def has_fmp(self) -> bool:
         return bool(self.fmp_api_key)
+
+    @property
+    def large_cap_blocklist(self):
+        from .known_largecaps import KNOWN_LARGE_CAP_TICKERS
+
+        return KNOWN_LARGE_CAP_TICKERS | set(self.extra_large_cap_exclusions)
 
     @property
     def has_reddit(self) -> bool:

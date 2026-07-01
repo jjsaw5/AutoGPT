@@ -1,6 +1,12 @@
 from smallcap_scanner.config import Config
 from smallcap_scanner.models import RedditSignal, StockCandidate
-from smallcap_scanner.pipeline import scan_combined, scan_fundamentals, scan_social
+from smallcap_scanner.pipeline import (
+    filter_known_large_caps,
+    hide_out_of_range,
+    scan_combined,
+    scan_fundamentals,
+    scan_social,
+)
 from smallcap_scanner import scoring
 
 
@@ -96,9 +102,57 @@ def test_scan_combined_only_contains_socially_discovered_tickers_and_flags_pump(
 
 
 def test_scan_combined_flags_ticker_outside_screen_range():
+    # MOONX ($42.50, $8.5B cap) is well outside the default price/cap band.
+    # With show_out_of_range=True it's still scored and flagged, not dropped.
+    ranked = scan_combined(_cfg(), mock=True, top_n=10, show_out_of_range=True)
+    moonx = next(c for c in ranked if c.symbol == "MOONX")
+    assert "OUTSIDE_PRICE_RANGE" in moonx.flags
+    assert "OUTSIDE_MARKET_CAP_RANGE" in moonx.flags
+
+
+def test_scan_combined_hides_out_of_range_tickers_by_default():
     ranked = scan_combined(_cfg(), mock=True, top_n=10)
-    moonco = next(c for c in ranked if c.symbol == "MOONX")
-    # MOONX ($42.50, $8.5B cap) is well outside the default price/cap band —
-    # stage 3 surfaces it with full context rather than silently dropping it.
-    assert "OUTSIDE_PRICE_RANGE" in moonco.flags
-    assert "OUTSIDE_MARKET_CAP_RANGE" in moonco.flags
+    assert "MOONX" not in {c.symbol for c in ranked}
+    # In-range names are unaffected.
+    assert "SLS" in {c.symbol for c in ranked}
+
+
+def test_filter_known_large_caps_drops_blocklisted_symbols():
+    signals = [
+        RedditSignal(symbol="AAPL", mentions_total=500),
+        RedditSignal(symbol="SPY", mentions_total=400),
+        RedditSignal(symbol="SLS", mentions_total=3),
+    ]
+    kept = filter_known_large_caps(signals, _cfg())
+    assert {s.symbol for s in kept} == {"SLS"}
+
+
+def test_filter_known_large_caps_noop_when_disabled():
+    cfg = _cfg()
+    cfg.filter_large_caps = False
+    signals = [RedditSignal(symbol="AAPL", mentions_total=500)]
+    kept = filter_known_large_caps(signals, cfg)
+    assert {s.symbol for s in kept} == {"AAPL"}
+
+
+def test_extra_large_cap_exclusions_extend_the_blocklist():
+    cfg = _cfg()
+    cfg.extra_large_cap_exclusions = ["FAKECO"]
+    signals = [
+        RedditSignal(symbol="FAKECO", mentions_total=500),
+        RedditSignal(symbol="SLS", mentions_total=3),
+    ]
+    kept = filter_known_large_caps(signals, cfg)
+    assert {s.symbol for s in kept} == {"SLS"}
+
+
+def test_hide_out_of_range_keeps_only_in_band_candidates():
+    from smallcap_scanner.models import ScoredCandidate
+
+    in_band = ScoredCandidate(symbol="IN", stock=StockCandidate(symbol="IN"), flags=[])
+    out_band = ScoredCandidate(
+        symbol="OUT", stock=StockCandidate(symbol="OUT"),
+        flags=["OUTSIDE_PRICE_RANGE"],
+    )
+    kept = hide_out_of_range([in_band, out_band])
+    assert [c.symbol for c in kept] == ["IN"]

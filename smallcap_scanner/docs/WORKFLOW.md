@@ -139,38 +139,55 @@ a saved step-2 result instead of re-scanning)
 **Code:** `pipeline.scan_combined()` → `fmp_client.quote_symbols()` →
 `scoring.score_candidate()`
 
-1. **Take the top N from step 2.** `N = SOCIAL_FMP_LIMIT` (default 50) —
+1. **Pre-filter known large-caps** (`pipeline.filter_known_large_caps`,
+   `known_largecaps.py`). Before spending any FMP lookups, drop tickers on a
+   maintained list of ~150 widely-known large/mega-cap tickers and index ETFs
+   (AAPL, SPY, AMD, MSTR, ...). ApeWisdom's raw rankings are dominated by the
+   same handful of these every scan; without this step they'd eat the entire
+   `SOCIAL_FMP_LIMIT` budget, crowding out genuinely small-cap names sitting
+   further down the mention-growth ranking. Disable with `FILTER_LARGE_CAPS=false`,
+   extend with `EXTRA_LARGE_CAP_EXCLUSIONS=TICKER1,TICKER2`. This list is
+   deliberately not exhaustive — it doesn't need to be, because of step 4 below.
+
+2. **Take the top N of what's left.** `N = SOCIAL_FMP_LIMIT` (default 50) —
    bounds how many FMP lookups happen, since a 6-subreddit ApeWisdom scan can
    surface hundreds of tickers and most won't be relevant.
 
-2. **Look each one up directly via FMP** (`quote_symbols`) — one `/stable/quote`
+3. **Look each one up directly via FMP** (`quote_symbols`) — one `/stable/quote`
    call per ticker, regardless of whether it passed step 1's screen. This is
    the reverse direction from step 1: instead of filtering FMP results by
    social mentions, we're filtering FMP lookups by what's socially relevant.
 
-3. **Score with the full blend**, all three sub-scores combined using
+4. **Score with the full blend**, all three sub-scores combined using
    `WEIGHT_FUNDAMENTAL` (0.30) / `WEIGHT_MOMENTUM` (0.30) / `WEIGHT_SOCIAL`
    (0.40) — this is the only stage where social score actually affects
    ranking.
 
-4. **Flag.** Same `risk_flags()` check used everywhere, but two of its checks
+5. **Flag.** Same `risk_flags()` check used everywhere, but two of its checks
    become meaningful specifically here:
    - `OUTSIDE_PRICE_RANGE` / `OUTSIDE_MARKET_CAP_RANGE` — fires when a
      socially-trending ticker doesn't actually fit the configured small-cap
-     band (e.g. AMD, SPY showing up because they're popular on
-     r/wallstreetbets generally). These almost never fire in step 1 (its
-     candidates came directly from the screener filtered to that band), but
-     fire often in step 3 since this step deliberately includes tickers from
-     outside that universe. Flagged, not dropped — you see the full picture
-     and can judge for yourself.
+     band. This is the dynamic, accurate backstop for anything that slipped
+     past step 1's static blocklist (a less-famous large-cap, a name that
+     just IPO'd, etc.) — it's computed from the live FMP data just pulled,
+     not a guess.
    - `LOW_AUTHOR_DIVERSITY` / `SUDDEN_SEEDED_SPIKE` (pump-and-dump
      signatures) — these only fire when the data source actually tracks
      per-post authors. Since the default social source (ApeWisdom) doesn't,
      they won't fire in the default config. They're live if you switch to
      `REDDIT_MODE=praw`.
 
+6. **Hide out-of-range results by default** (`pipeline.hide_out_of_range`).
+   Anything still flagged `OUTSIDE_PRICE_RANGE`/`OUTSIDE_MARKET_CAP_RANGE`
+   after lookup is excluded from the displayed/saved combined list — this is
+   a display filter, not a data-loss one: it only ever applies to step 3's
+   output, and `--show-out-of-range` brings it back when you want to see
+   everything that was checked (e.g. to sanity-check the pipeline itself).
+
 **Output:** the final ranked list — this is the one closest to "stocks that
-are both fundamentally interesting *and* gaining real attention."
+are both fundamentally interesting *and* gaining real attention," with the
+obvious mega-cap noise removed by construction rather than left for you to
+filter manually.
 
 ---
 
@@ -182,6 +199,8 @@ are both fundamentally interesting *and* gaining real attention."
 | Which subreddits | `config.py` `DEFAULT_APEWISDOM_SUBREDDITS` | `APEWISDOM_SUBREDDITS` |
 | How much social vs. fundamentals matters in step 3 | `config.py` weights | `WEIGHT_FUNDAMENTAL`, `WEIGHT_MOMENTUM`, `WEIGHT_SOCIAL` |
 | How many social tickers get FMP-checked in step 3 | `config.py` | `SOCIAL_FMP_LIMIT` |
+| The large-cap blocklist (what gets skipped before lookup) | `known_largecaps.py` | `EXTRA_LARGE_CAP_EXCLUSIONS` (add); `FILTER_LARGE_CAPS=false` (disable) |
+| Whether out-of-range tickers show in step 3's output | `pipeline.py` `hide_out_of_range` | CLI `--show-out-of-range` |
 | The actual scoring formulas | `scoring.py` (`score_fundamental`, `score_momentum`, `score_social`) | — |
 | What counts as a risk flag | `scoring.py` `risk_flags()` | — |
 | Reach the 3 niche subs ApeWisdom doesn't track | `config.py` `reddit_mode` | `REDDIT_MODE=praw` + `REDDIT_CLIENT_ID`/`SECRET` |

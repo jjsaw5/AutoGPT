@@ -67,12 +67,19 @@ def build_parser() -> argparse.ArgumentParser:
     pc.add_argument("--social-limit", type=int, default=None,
                      help="How many top social tickers to cross-reference (default: "
                           "SOCIAL_FMP_LIMIT env, currently informs cfg default of 50).")
+    pc.add_argument("--show-out-of-range", action="store_true",
+                     help="Include tickers outside the configured price/market-cap band "
+                          "(hidden by default) — e.g. mega-caps that are popular on Reddit "
+                          "generally but don't fit the small-cap thesis.")
 
     pa = sub.add_parser("all", parents=[common],
                          help="Run fundamentals, social, and combined in sequence.")
     pa.add_argument("--top", type=int, default=25, help="Max rows to show per stage.")
     pa.add_argument("--social-limit", type=int, default=None,
                      help="How many top social tickers to cross-reference in the combined stage.")
+    pa.add_argument("--show-out-of-range", action="store_true",
+                     help="Include tickers outside the configured price/market-cap band "
+                          "in the combined stage (hidden by default).")
 
     return p
 
@@ -137,6 +144,7 @@ def main(argv: list[str] | None = None) -> int:
         ranked = scan_combined(
             cfg, social=social, mock=args.mock,
             social_limit=args.social_limit, top_n=args.top,
+            show_out_of_range=args.show_out_of_range,
         )
         rows = [c.to_row() for c in ranked]
         _emit(rows, format_table(ranked), args, "combined analysis")
@@ -153,20 +161,26 @@ def main(argv: list[str] | None = None) -> int:
         print(format_table(fund) if fund else "No prospects matched the current filters.")
 
         print("\n=== STAGE 2: trending on social media ===")
-        social = scan_social(cfg, mock=args.mock, top_n=max(args.top, 40))
-        print(format_social_table(social) if social else "No social mentions found.")
+        # Fetch unranked-by-top_n so stage 3 (below) can pre-filter known
+        # large-caps and still have a deep enough pool left to cross-reference
+        # — capping here first would throw away everything past the display
+        # limit before stage 3 ever sees it.
+        social = scan_social(cfg, mock=args.mock, top_n=None)
+        display_n = max(args.top, 40)
+        print(format_social_table(social[:display_n]) if social else "No social mentions found.")
 
         print("\n=== STAGE 3: social tickers cross-referenced against FMP ===")
         combined = scan_combined(
             cfg, social=social, mock=args.mock,
             social_limit=args.social_limit, top_n=args.top,
+            show_out_of_range=args.show_out_of_range,
         )
         print(format_table(combined) if combined else "No combined candidates.")
 
         if args.out:
             payload = {
                 "fundamentals": [c.to_row() for c in fund],
-                "social": dump_social(social),
+                "social": dump_social(social[:display_n]),
                 "combined": [c.to_row() for c in combined],
             }
             with open(args.out, "w") as f:

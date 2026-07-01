@@ -129,19 +129,64 @@ def load_social(rows: List[dict]) -> List[RedditSignal]:
 # Stage 3: cross-reference a social list against FMP, full 3-way scoring
 # ---------------------------------------------------------------------------
 
+_OUT_OF_RANGE_FLAGS = {"OUTSIDE_PRICE_RANGE", "OUTSIDE_MARKET_CAP_RANGE"}
+
+
+def filter_known_large_caps(
+    signals: List[RedditSignal], cfg: Config
+) -> List[RedditSignal]:
+    """Drop tickers on the maintained large-cap blocklist before they consume
+    the FMP lookup budget (see known_largecaps.py). ApeWisdom's raw rankings
+    are dominated by the same handful of mega-caps every scan — without this,
+    SOCIAL_FMP_LIMIT gets spent on names that would just get flagged
+    out-of-range anyway, crowding out genuinely small-cap activity sitting
+    further down the ranking.
+    """
+    if not cfg.filter_large_caps:
+        return signals
+    blocklist = cfg.large_cap_blocklist
+    kept = [s for s in signals if s.symbol not in blocklist]
+    skipped = len(signals) - len(kept)
+    if skipped:
+        log.info(
+            "Skipped %d known large-cap ticker(s) before the FMP lookup "
+            "(set FILTER_LARGE_CAPS=false to disable).",
+            skipped,
+        )
+    return kept
+
+
+def hide_out_of_range(ranked: List[ScoredCandidate]) -> List[ScoredCandidate]:
+    """Drop candidates flagged outside the configured price/market-cap band.
+
+    This is a display-time filter, not a data-loss one — it only runs in
+    scan_combined and only when the caller hasn't asked to see everything
+    (the social/fundamentals stages and any caller passing
+    show_out_of_range=True still see the full picture).
+    """
+    return [c for c in ranked if not (_OUT_OF_RANGE_FLAGS & set(c.flags))]
+
+
 def scan_combined(
     cfg: Config,
     social: Optional[List[RedditSignal]] = None,
     mock: bool = False,
     social_limit: Optional[int] = None,
     top_n: Optional[int] = 25,
+    show_out_of_range: bool = False,
 ) -> List[ScoredCandidate]:
     """Look up the top social tickers via FMP and score with the full blend.
 
-    If ``social`` isn't provided, runs a fresh ``scan_social`` first.
+    If ``social`` isn't provided, runs a fresh ``scan_social`` first. Known
+    large-caps are skipped before the FMP lookup (see
+    ``filter_known_large_caps``), and by default the returned list excludes
+    anything still flagged outside the configured price/cap band — pass
+    ``show_out_of_range=True`` to see those too.
     """
     if social is None:
         social = scan_social(cfg, mock=mock)
+
+    social = filter_known_large_caps(social, cfg)
 
     limit = social_limit if social_limit is not None else cfg.social_fmp_limit
     top_social = social[:limit]
@@ -162,6 +207,19 @@ def scan_combined(
 
     reddit_map = {s.symbol: s for s in top_social}
     ranked = scoring.rank(stocks, reddit_map, cfg)
+
+    if not show_out_of_range:
+        before = len(ranked)
+        ranked = hide_out_of_range(ranked)
+        hidden = before - len(ranked)
+        if hidden:
+            log.info(
+                "Hid %d ticker(s) outside the configured price/market-cap "
+                "range from the combined output (use --show-out-of-range to "
+                "see them).",
+                hidden,
+            )
+
     return ranked[:top_n] if top_n else ranked
 
 
