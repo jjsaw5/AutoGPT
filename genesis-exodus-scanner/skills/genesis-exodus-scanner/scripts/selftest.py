@@ -381,6 +381,56 @@ def test_confidence_all_strong_maxes_at_ten(tmp):
     record("fmp: confidence maxes at 10/10 when every dimension clears its strong threshold", PASS if ok else FAIL, json.dumps(conf))
 
 
+def test_biotech_check_not_flagged_for_non_biotech_industry(tmp):
+    result = fmp_module.assess_biotech_binary_risk("Drug Manufacturers - General", 309_765_378_129, 10_000_000_000)
+    ok = result["flagged"] is False
+    record("fmp: biotech check clears non-'Biotechnology' industry (MRK-shaped)", PASS if ok else FAIL, json.dumps(result))
+
+
+def test_biotech_check_clears_profitable_established_names(tmp):
+    # Real REGN/VRTX data: "Biotechnology" industry, but large revenue AND profitable.
+    regn = fmp_module.assess_biotech_binary_risk("Biotechnology", 14_342_900_000, 4_504_900_000)
+    vrtx = fmp_module.assess_biotech_binary_risk("Biotechnology", 12_074_600_000, 3_953_200_000)
+    ok = regn["flagged"] is False and vrtx["flagged"] is False
+    record("fmp: biotech check clears profitable, diversified biotechs (REGN/VRTX -- industry alone would wrongly flag these)", PASS if ok else FAIL, json.dumps({"regn": regn, "vrtx": vrtx}))
+
+
+def test_biotech_check_flags_low_revenue_clinical_stage_names(tmp):
+    # Real RCUS/GRAL/XENE/KURA/REPL data: "Biotechnology" industry, revenue well under the floor.
+    cases = {
+        "RCUS": (247_000_000, -353_000_000),
+        "GRAL": (147_172_000, -408_351_000),
+        "XENE": (7_500_000, -345_910_000),
+        "KURA": (67_482_000, -278_666_000),
+        "REPL": (0, -313_940_000),
+    }
+    results = {sym: fmp_module.assess_biotech_binary_risk("Biotechnology", rev, ni) for sym, (rev, ni) in cases.items()}
+    ok = all(r["flagged"] is True for r in results.values())
+    record("fmp: biotech check flags real low-revenue clinical-stage names (RCUS/GRAL/XENE/KURA/REPL)", PASS if ok else FAIL, json.dumps(results))
+
+
+def test_biotech_check_flags_revenue_but_bigger_loss(tmp):
+    # Real MRNA data: revenue clears the floor, but net loss exceeds total revenue.
+    result = fmp_module.assess_biotech_binary_risk("Biotechnology", 1_944_000_000, -2_822_000_000)
+    ok = result["flagged"] is True and "exceeds total revenue" in result["reason"]
+    record("fmp: biotech check flags revenue-clearing names whose losses exceed revenue (MRNA)", PASS if ok else FAIL, json.dumps(result))
+
+
+def test_biotech_check_known_data_quality_blind_spot(tmp):
+    # Real ONTX case: FMP's reported revenue ($2.79B) is obviously wrong for a $625M market-cap
+    # clinical-stage company -- this heuristic will clear it anyway, which is exactly why it's a
+    # mandatory judgment prompt, not an auto-block. This test documents the known limitation.
+    result = fmp_module.assess_biotech_binary_risk("Biotechnology", 2_790_000_000, 9_170_000)
+    ok = result["flagged"] is False  # documents the blind spot, doesn't pretend it's fixed
+    record("fmp: biotech check has a known blind spot on bad upstream data (ONTX) -- by design requires a human read, not just the flag", PASS if ok else FAIL, json.dumps(result))
+
+
+def test_biotech_check_missing_revenue_flags_for_safety(tmp):
+    result = fmp_module.assess_biotech_binary_risk("Biotechnology", None, None)
+    ok = result["flagged"] is True
+    record("fmp: biotech check flags (fails closed) when revenue data is missing entirely", PASS if ok else FAIL, json.dumps(result))
+
+
 def test_fmp_key_missing_is_graceful(tmp):
     proc = run_fmp(tmp, "regime")
     if proc.returncode == 0:
@@ -456,6 +506,12 @@ def main():
         test_confidence_intc_case(tmp)
         test_confidence_missing_data_fails_closed_per_component(tmp)
         test_confidence_all_strong_maxes_at_ten(tmp)
+        test_biotech_check_not_flagged_for_non_biotech_industry(tmp)
+        test_biotech_check_clears_profitable_established_names(tmp)
+        test_biotech_check_flags_low_revenue_clinical_stage_names(tmp)
+        test_biotech_check_flags_revenue_but_bigger_loss(tmp)
+        test_biotech_check_known_data_quality_blind_spot(tmp)
+        test_biotech_check_missing_revenue_flags_for_safety(tmp)
 
     with tempfile.TemporaryDirectory(prefix="genesis-selftest-fmp-") as tmp_str2:
         tmp2 = Path(tmp_str2)

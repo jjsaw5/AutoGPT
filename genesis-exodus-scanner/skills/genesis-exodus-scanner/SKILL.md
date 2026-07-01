@@ -112,9 +112,14 @@ genuinely-hit profit-recovery sell.
     run `fmp.py news SYM`, read the actual headlines, and record an explicit pass/fail + one-line
     reason. See §7 NEWS CHECK for the full requirement -- a candidate that fails this is downgraded
     to WATCHLIST, never bought, regardless of how clean every other gate looked.
+12c. MANDATORY BIOTECH BINARY-EVENT CHECK on the top candidate: run `fmp.py biotech-check SYM`.
+    See §7 BIOTECH BINARY-EVENT CHECK -- `flagged=true` is a prompt to actually look at the company
+    (approved/commercial revenue vs. pipeline-dependent), not an automatic block; record an explicit
+    pass/fail + one-line reason the same way as the news check.
 13. Review the order (`review_equity_order`) before any placement.
 14. Place only if every gate passes and mode allows. Record with `ops.py buy-record`.
-15. Log the scan + every decision to `state/journal.jsonl`, including the news-check verdict + reason.
+15. Log the scan + every decision to `state/journal.jsonl`, including the news-check and
+    biotech-check verdicts + reasons.
 
 ## 3. ACCOUNT ACCESS CHECK
 `get_accounts` -> pick agentic_allowed=true -> `get_portfolio` + `get_equity_positions` +
@@ -147,7 +152,8 @@ liquidity_pass (`fmp.py indicators`'s avgDollarVol20 >= $3,000,000/day -- see re
 "Universe rules" for the full set of persisted screener defaults), market filter passes, stop defined,
 entry_gate_pass (`fmp.py indicators`'s deterministic "price <=8% above ideal entry" check -- see
 IDEAL ENTRY below, never eyeballed), confirmed cash, tradability OK, NEWS CHECK passed (see below --
-mandatory, not advisory), order review clean, no safety-rule fail, within hours, not a duplicate.
+mandatory, not advisory), BIOTECH BINARY-EVENT CHECK passed (see below -- mandatory judgment prompt,
+not an auto-block), order review clean, no safety-rule fail, within hours, not a duplicate.
 PRIMARY ENTRY: own the highest relative-strength names that pass the full trend template; a fresh
 breakout is a bonus, not a prerequisite. This universe is NOT mega-cap-only -- the screener defaults
 to a $300M market-cap floor, so quality small/mid-caps are in scope as long as they clear the trend
@@ -169,6 +175,20 @@ false-negative (real bad news phrased without a listed keyword). Read the actual
   broad-market/sector-wide, valuation-only analyst chatter, or generic macro commentary.
 Record the pass/fail + one-line reason in the scan output and in `state/journal.jsonl` (§2 step 15) --
 this must never be silently skipped, including under time/token pressure on a scheduled run.
+
+BIOTECH BINARY-EVENT CHECK (mandatory, §2 step 12c, same pattern as NEWS CHECK): before sizing or
+placing ANY buy, run `fmp.py biotech-check SYM`. This is a heuristic flag (industry=="Biotechnology"
+AND revenue below $500M, OR losses exceeding revenue), NOT a clean automatic gate -- there's no data
+field that reliably means "single-catalyst gamble" (industry alone false-positives on profitable,
+diversified biotechs like REGN/VRTX, and upstream revenue data can simply be wrong for thinly-covered
+tickers -- verified on ONTX, where FMP reported $2.79B revenue for a $625M market-cap clinical-stage
+company). Treat `flagged=true` as a prompt to actually look at what the company is (approved,
+revenue-generating products vs. pipeline-dependent with no/minimal commercial revenue), not a verdict:
+- FAIL (downgrade to WATCHLIST, do not buy) when the company genuinely has no/minimal approved
+  commercial revenue and its stock is effectively a bet on a specific trial/FDA readout.
+- PASS (proceed) when `flagged=false`, OR when `flagged=true` but a quick check shows the company has
+  real, diversified commercial revenue (the flag can be wrong on both data and classification grounds).
+Record the pass/fail + reason the same way as the news check.
 
 R:R FORMULA (deterministic, computed by `fmp.py indicators SYM` -- see references/playbooks.md for the
 full derivation): risk = the 10% initial stop. Reward = distance to the prior 52-week high, UNLESS the
@@ -212,7 +232,9 @@ to 1 share.
 CAPS: max 1 replacement per de-risk event, <=3 new buys/day, <=$2,000/name and <=20%/name on the initial
 entry, <=3 per sector, 3–8 total positions. No margin, no unsettled capital.
 HARD SCOPE — NEVER without explicit manual approval: options, shorting, margin, leveraged ETFs, crypto,
-futures, penny stocks (<$5), low-volume pumps, biotech binary gambles, averaging down, after-hours.
+futures, penny stocks (<$5), low-volume pumps, biotech binary gambles (`fmp.py biotech-check SYM` is a
+mandatory judgment-prompt assist for this -- see BIOTECH BINARY-EVENT CHECK below, no clean auto-gate
+exists for it), averaging down, after-hours.
 ADVISORY SENSORS inform but never decide: blended-RS rank, rotation-out flags, correlation clusters,
 breadth. The LLM remains the decision-maker. (News is the one exception promoted to a MANDATORY check
 above -- still an LLM judgment call, not a coded boolean gate, but no longer optional to run.)

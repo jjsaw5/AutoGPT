@@ -50,10 +50,13 @@ Top candidate:         <SYMBOL>  confidence=<n>/10 (from `fmp.py confidence`)  R
   Size:   <n> shares  (~$<value>, capped at lesser of $2,000 / 20% of equity, risk $<value> / <pct>% to stop)
   News check (mandatory): <PASS | FAIL — WATCHLIST>  keyword flag: <clean | flagged: [<keywords>]>
     Reason: <one-line judgment -- why this is/isn't a company-specific negative catalyst>
+  Biotech binary-event check (mandatory): <PASS | FAIL — WATCHLIST | N/A (not biotech industry)>
+    Flag: <clean | flagged>  Reason: <one-line judgment, not just the flag -- see playbooks.md>
   Gates:  confidence>=7 (confidence_pass) <pass/fail>  R:R>=2:1 (rr_pass) <pass/fail>
           liquidity_pass <pass/fail>  market filter <pass/fail>
           entry_gate_pass (<=8% above ideal entry) <pass/fail>  earnings clear <pass/fail>
-          news check <pass/fail>  order review <clean/warned>  duplicate check <pass/fail>
+          news check <pass/fail>  biotech binary-event check <pass/fail/n-a>
+          order review <clean/warned>  duplicate check <pass/fail>
 Decision: <BUY PLACED | NO TRADE — <reason> | WATCHLIST — <reason>>
 
 --- DECISION ---

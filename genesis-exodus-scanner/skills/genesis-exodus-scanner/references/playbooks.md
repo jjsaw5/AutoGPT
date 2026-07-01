@@ -279,5 +279,51 @@ typed in each session -- a bare `fmp.py screener` call applies them automaticall
 `isEtf=false` / `isFund=false` / `isActivelyTrading=true` are hardcoded, not overridable. All four
 `UNIVERSE_*` floors can be overridden per-call via explicit `--marketCapMoreThan` etc. flags for a
 one-off query (e.g. deliberately widening or narrowing the universe) — but the defaults are what
-an actual scheduled scan gets if it just calls `fmp.py screener` plainly. The earnings guard and
-mandatory news check (see below) cover the binary-event and headline-risk parts of hard scope.
+an actual scheduled scan gets if it just calls `fmp.py screener` plainly. The earnings guard, the
+mandatory news check, and the biotech binary-event check (below) cover the remaining hard-scope
+categories that can't be enforced by a screener parameter alone.
+
+## Biotech binary-event check (the SKILL.md §7 hard-scope exclusion with no clean automatic gate)
+
+Every other hard-scope exclusion (options, margin, leveraged ETFs, crypto, penny stocks) has a
+mechanical signal to check against. "Biotech binary-event gambles" doesn't — there's no data field
+that means "this stock's value is basically a bet on one clinical trial or FDA decision." This was
+investigated directly rather than assumed impossible:
+
+- **Industry classification alone fails.** FMP tags both a pre-revenue clinical-stage name (KURA,
+  REPL, XENE) AND a massively profitable, diversified, decades-established biotech (REGN, VRTX) as
+  `industry: "Biotechnology"`. Excluding on industry alone would wrongly block real leaders.
+- **Revenue/profitability narrows it a lot, but isn't bulletproof.** Established, non-binary
+  biotechs have real revenue and are usually profitable; genuine clinical-stage bets have little or
+  no revenue and large losses. But upstream data can simply be wrong for thinly-covered tickers —
+  verified directly: FMP's `income-statement` endpoint reported **$2.79B revenue for ONTX
+  (Onconova)**, a genuine small clinical-stage company with a **$625M market cap** — that revenue
+  figure is almost certainly a data or ticker-reuse artifact, not real. A purely automatic filter
+  using this data would have wrongly cleared exactly the kind of name it's meant to catch.
+
+Given that, `fmp.py biotech-check SYM` (`assess_biotech_binary_risk()` in `scripts/fmp.py`) is
+built the same way as the news check: a deterministic flag that's a **mandatory prompt to look
+closer**, never an auto-block.
+
+**Flag logic:** not flagged unless `industry` contains "Biotechnology". If it does, flag when:
+revenue data is missing entirely, OR revenue is below `BIOTECH_REVENUE_FLOOR` ($500M), OR net
+income is negative and its magnitude exceeds total revenue (spending more on the pipeline than the
+commercial business brings in, even if revenue alone clears the floor).
+
+Worked examples, all real data pulled directly (not hypothetical):
+
+| Symbol | Industry | Revenue | Net income | Flagged? | Why |
+|---|---|---|---|---|---|
+| MRK | Drug Manufacturers - General | $64.9B | $18.3B | No | Not even biotech-industry-classified |
+| REGN | Biotechnology | $14.3B | +$4.5B | **No** | Revenue + profit both clear comfortably |
+| VRTX | Biotechnology | $12.1B | +$4.0B | **No** | Same — industry alone would have wrongly flagged this |
+| MRNA | Biotechnology | $1.9B | -$2.8B | **Yes** | Revenue clears the floor, but the loss exceeds it |
+| RCUS/GRAL/XENE/KURA | Biotechnology | $7.5M-$247M | all negative | **Yes** | Revenue well under the floor |
+| REPL | Biotechnology | $0 | -$314M | **Yes** | Zero revenue — the purest case |
+| ONTX | Biotechnology | $2.79B *(likely wrong)* | +$9.2M | **No** *(blind spot)* | Documents the known limitation — bad upstream data clears a name that should probably be flagged. This is exactly why it must stay a mandatory human/LLM read, not an automatic gate. |
+
+**Bottom line: this cannot be fully automated with the data available**, and the design accepts
+that rather than pretending otherwise — `flagged=false` is not a clearance to skip judgment, and
+`flagged=true` is not an automatic rejection. Read what the company actually does (approved,
+revenue-generating products vs. pipeline-dependent) before deciding, the same discipline as the
+news check.

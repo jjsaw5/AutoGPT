@@ -576,6 +576,79 @@ def cmd_earnings(args):
     out({"symbol": symbol, "next_earnings": upcoming, "earnings_guard_block": within_guard})
 
 
+# --------------------------------------------------------- biotech binary-event risk
+
+# SKILL.md §7 hard-scopes "biotech binary-event gambles" out, but there's no clean automatable
+# signal for it -- `industry == "Biotechnology"` alone is NOT enough (REGN and VRTX are massively
+# profitable, diversified, not remotely a single-catalyst bet, yet FMP tags them "Biotechnology"
+# same as a pre-revenue clinical-stage name). Revenue/profitability narrows it considerably but
+# isn't bulletproof either -- verified on 2026-07-01 that FMP's revenue figure for ONTX (Onconova,
+# a genuine small clinical-stage name) came back as $2.79B, which is obviously wrong for a $625M
+# market-cap company (almost certainly a data/ticker-reuse artifact) and would have caused this
+# heuristic to wrongly clear it. This is why the flag is a MANDATORY judgment prompt (like the news
+# keyword scan), never an automatic block -- read the actual company, don't trust the flag alone.
+BIOTECH_INDUSTRY_MARKER = "biotechnology"
+BIOTECH_REVENUE_FLOOR = 500_000_000  # below this + biotech industry -> likely still pipeline-dependent
+
+
+def assess_biotech_binary_risk(industry, revenue, net_income, revenue_floor=BIOTECH_REVENUE_FLOOR):
+    """Pure function (no I/O) so it's unit-testable offline. Flags a candidate for a MANDATORY
+    human/LLM read before buying -- it does not itself disqualify anything. See the module
+    comment above for why this can't be a clean automatic gate (industry alone false-negatives on
+    profitable biotechs like REGN/VRTX; revenue data can be simply wrong for thinly-covered names).
+    """
+    is_biotech_industry = bool(industry) and BIOTECH_INDUSTRY_MARKER in industry.lower()
+    if not is_biotech_industry:
+        return {"flagged": False, "reason": "not classified as Biotechnology industry"}
+
+    if revenue is None:
+        return {"flagged": True, "reason": "Biotechnology industry with no revenue data available"}
+    if revenue < revenue_floor:
+        return {
+            "flagged": True,
+            "reason": f"Biotechnology industry with revenue (${revenue:,.0f}) below the "
+                      f"${revenue_floor:,.0f} floor -- likely still substantially pipeline-dependent",
+        }
+    if net_income is not None and net_income < 0 and abs(net_income) > revenue:
+        return {
+            "flagged": True,
+            "reason": f"Biotechnology industry, revenue (${revenue:,.0f}) clears the floor but net "
+                      f"loss (${net_income:,.0f}) exceeds total revenue -- still burning more on the "
+                      f"pipeline than the commercial business brings in",
+        }
+    return {"flagged": False, "reason": "Biotechnology industry but revenue/profitability look established"}
+
+
+def cmd_biotech_check(args):
+    symbol = args.symbol.upper()
+    industry = None
+    revenue = None
+    net_income = None
+    try:
+        prof = _get("profile", {"symbol": symbol})
+        if isinstance(prof, list) and prof:
+            industry = prof[0].get("industry")
+    except SystemExit:
+        pass
+    try:
+        income = _get("income-statement", {"symbol": symbol, "period": "annual", "limit": 1}, use_cache=True)
+        if isinstance(income, list) and income:
+            revenue = income[0].get("revenue")
+            net_income = income[0].get("netIncome")
+    except SystemExit:
+        pass
+
+    assessment = assess_biotech_binary_risk(industry, revenue, net_income)
+    out({
+        "symbol": symbol,
+        "industry": industry,
+        "revenue": revenue,
+        "net_income": net_income,
+        "flagged": assessment["flagged"],
+        "reason": assessment["reason"],
+    })
+
+
 def cmd_earnings_multi(args):
     results = {}
     for symbol in args.symbols:
@@ -805,6 +878,10 @@ def build_parser():
     sp = sub.add_parser("earnings", help="next-earnings guard for one symbol")
     sp.add_argument("symbol")
     sp.set_defaults(func=cmd_earnings)
+
+    sp = sub.add_parser("biotech-check", help="biotech binary-event risk flag (mandatory prompt, not an auto-block)")
+    sp.add_argument("symbol")
+    sp.set_defaults(func=cmd_biotech_check)
 
     sp = sub.add_parser("earnings-multi", help="next-earnings guard for many symbols")
     sp.add_argument("symbols", nargs="+")
