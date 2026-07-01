@@ -40,6 +40,13 @@ DAILY_BUY_CAP = 3
 CONSECUTIVE_LOOKBACK = 3
 CONSECUTIVE_LOSS_THRESHOLD = 2
 
+# Smallest buying power worth running discovery for at all -- previously undefined prose ("BP
+# below your smallest-deployable floor"). Derived from fmp.py's UNIVERSE_PRICE_FLOOR ($5): the
+# whole-share rule requires >=2 shares, so $10 is the absolute floor below which no valid buy
+# exists anywhere in our own universe. Kept in sync manually (ops.py and fmp.py are independent
+# CLIs, not a shared import) -- if you change UNIVERSE_PRICE_FLOOR, update this too.
+DEPLOYABLE_CAPITAL_FLOOR = 10.0
+
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
@@ -290,6 +297,15 @@ def cmd_preflight(args):
     if buys_today >= DAILY_BUY_CAP:
         reasons.append(f"daily_buy_cap_reached ({buys_today}/{DAILY_BUY_CAP})")
 
+    deployable_capital_ok = None
+    if args.buying_power is not None:
+        deployable_capital_ok = args.buying_power >= DEPLOYABLE_CAPITAL_FLOOR
+        if not deployable_capital_ok:
+            reasons.append(
+                f"insufficient_deployable_capital (${args.buying_power} < "
+                f"${DEPLOYABLE_CAPITAL_FLOOR} floor -- fast-path to monitoring only, skip discovery)"
+            )
+
     out({
         "new_buys_allowed": len(reasons) == 0,
         "reasons": reasons,
@@ -301,6 +317,9 @@ def cmd_preflight(args):
         "drawdown_pct": drawdown_pct,
         "buys_today": buys_today,
         "daily_buy_cap": DAILY_BUY_CAP,
+        "buying_power": args.buying_power,
+        "deployable_capital_floor": DEPLOYABLE_CAPITAL_FLOOR,
+        "deployable_capital_ok": deployable_capital_ok,
     })
 
 
@@ -312,6 +331,8 @@ def build_parser():
 
     sp = sub.add_parser("preflight", help="consolidated buy-gate verdict")
     sp.add_argument("--nav", type=float, required=True, dest="nav")
+    sp.add_argument("--buying-power", type=float, default=None, dest="buying_power",
+                     help="confirmed buying power; omit to skip the deployable-capital floor check")
     sp.set_defaults(func=cmd_preflight)
 
     sp = sub.add_parser("nav-set", help="seed today's NAV baseline (first-write-wins)")

@@ -260,6 +260,74 @@ def test_liquidity_check_fails_closed_on_missing_data(tmp):
     record("fmp: liquidity check fails closed on missing data", PASS if ok else FAIL, "avg_dollar_vol20=None")
 
 
+def test_ideal_entry_pullback_case_intc(tmp):
+    # Real INTC data from the 2026-07-01 sims: no breakout, so the 50-DMA is the reference.
+    entry = fmp_module.compute_ideal_entry(price=127.02, sma50=112.2994, hi20=None, hi55=None)
+    ok = (
+        entry is not None
+        and entry["entry_method"] == "50-day SMA (pullback support)"
+        and entry["pct_above_ideal_entry"] == 13.11
+        and entry["entry_gate_pass"] is False
+    )
+    record("fmp: ideal entry uses the 50-DMA when not breaking out (INTC -- fails, too extended)", PASS if ok else FAIL, json.dumps(entry))
+
+
+def test_ideal_entry_pullback_case_nbis_passes(tmp):
+    entry = fmp_module.compute_ideal_entry(price=229.18, sma50=213.9096, hi20=None, hi55=None)
+    ok = entry is not None and entry["pct_above_ideal_entry"] == 7.14 and entry["entry_gate_pass"] is True
+    record("fmp: ideal entry passes within 8% of the 50-DMA (NBIS)", PASS if ok else FAIL, json.dumps(entry))
+
+
+def test_ideal_entry_breakout_case_uses_breakout_level(tmp):
+    # Confirmed breakout should use the breakout level, not the 50-DMA, even if both are available.
+    entry = fmp_module.compute_ideal_entry(price=105.0, sma50=90.0, hi20=100.0, hi55=95.0, breakout20=True)
+    ok = (
+        entry is not None
+        and entry["entry_method"] == "20-day breakout level"
+        and entry["ideal_entry"] == 100.0
+    )
+    record("fmp: ideal entry uses the breakout level (not 50-DMA) when breakout20 is true", PASS if ok else FAIL, json.dumps(entry))
+
+
+def test_ideal_entry_prefers_55day_breakout_over_20day(tmp):
+    entry = fmp_module.compute_ideal_entry(price=110.0, sma50=90.0, hi20=100.0, hi55=105.0, breakout20=True, breakout55=True)
+    ok = entry is not None and entry["entry_method"] == "55-day breakout level" and entry["ideal_entry"] == 105.0
+    record("fmp: ideal entry prefers the 55-day breakout level over 20-day when both trigger", PASS if ok else FAIL, json.dumps(entry))
+
+
+def test_ideal_entry_missing_data_fails_closed(tmp):
+    entry = fmp_module.compute_ideal_entry(price=100.0, sma50=None, hi20=None, hi55=None)
+    ok = entry is None
+    record("fmp: ideal entry returns None (gate fails) with no SMA50 or breakout level", PASS if ok else FAIL, json.dumps(entry))
+
+
+def test_ops_deployable_capital_blocks_below_floor(tmp):
+    run_ops(tmp, "live", "on")
+    run_ops(tmp, "nav-set", "10000")
+    proc = run_ops(tmp, "preflight", "--nav", "10000", "--buying-power", "5")
+    data = json.loads(proc.stdout)
+    ok = (
+        data["new_buys_allowed"] is False
+        and data["deployable_capital_ok"] is False
+        and "insufficient_deployable_capital" in " ".join(data["reasons"])
+    )
+    record("ops: preflight blocks buys when buying power is below the $10 deployable floor", PASS if ok else FAIL, json.dumps(data))
+
+
+def test_ops_deployable_capital_passes_above_floor(tmp):
+    proc = run_ops(tmp, "preflight", "--nav", "10000", "--buying-power", "500")
+    data = json.loads(proc.stdout)
+    ok = data["new_buys_allowed"] is True and data["deployable_capital_ok"] is True
+    record("ops: preflight passes once buying power clears the deployable floor", PASS if ok else FAIL, json.dumps(data))
+
+
+def test_ops_preflight_backward_compatible_without_buying_power(tmp):
+    proc = run_ops(tmp, "preflight", "--nav", "10000")
+    data = json.loads(proc.stdout)
+    ok = data["new_buys_allowed"] is True and data["deployable_capital_ok"] is None
+    record("ops: preflight without --buying-power skips the floor check (backward compatible)", PASS if ok else FAIL, json.dumps(data))
+
+
 def test_fmp_key_missing_is_graceful(tmp):
     proc = run_fmp(tmp, "regime")
     if proc.returncode == 0:
@@ -309,6 +377,9 @@ def main():
         test_ops_daily_loss_halt(tmp)
         test_ops_nav_first_write_wins(tmp)
         test_ops_consecutive_loss_halt(tmp)
+        test_ops_deployable_capital_blocks_below_floor(tmp)
+        test_ops_deployable_capital_passes_above_floor(tmp)
+        test_ops_preflight_backward_compatible_without_buying_power(tmp)
         test_ops_daily_buy_cap(tmp)
         test_ops_ledger_validation(tmp)
         test_rr_far_below_high_uses_distance_method(tmp)
@@ -322,6 +393,11 @@ def main():
         test_liquidity_check_passes_above_floor(tmp)
         test_liquidity_check_fails_below_floor(tmp)
         test_liquidity_check_fails_closed_on_missing_data(tmp)
+        test_ideal_entry_pullback_case_intc(tmp)
+        test_ideal_entry_pullback_case_nbis_passes(tmp)
+        test_ideal_entry_breakout_case_uses_breakout_level(tmp)
+        test_ideal_entry_prefers_55day_breakout_over_20day(tmp)
+        test_ideal_entry_missing_data_fails_closed(tmp)
 
     with tempfile.TemporaryDirectory(prefix="genesis-selftest-fmp-") as tmp_str2:
         tmp2 = Path(tmp_str2)

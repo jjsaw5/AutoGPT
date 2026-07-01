@@ -65,6 +65,41 @@ def check_liquidity(avg_dollar_vol20, floor=UNIVERSE_MIN_AVG_DOLLAR_VOL20):
     return avg_dollar_vol20 is not None and avg_dollar_vol20 >= floor
 
 
+# "Ideal entry" (SKILL.md §7 "price <= 8% above ideal entry" gate) -- previously undefined prose.
+ENTRY_MAX_PCT_ABOVE_IDEAL = 8.0
+
+
+def compute_ideal_entry(price, sma50, hi20, hi55, breakout20=False, breakout55=False,
+                         max_pct_above=ENTRY_MAX_PCT_ABOVE_IDEAL):
+    """Deterministic reference price for the SKILL.md §7 buy gate. Pure function (no I/O) so it's
+    unit-testable offline in selftest.py.
+    - Confirmed breaking out (new 55-day or 20-day high): ideal entry is the level just cleared --
+      buying at/near the breakout, not chasing it days or weeks later.
+    - Otherwise: ideal entry is the 50-day SMA -- the natural pullback/support level for "own the
+      leader," which explicitly doesn't require a fresh breakout (SKILL.md §7 PRIMARY ENTRY).
+    Returns None (gate fails) if there isn't enough data -- never guess a level.
+    """
+    if breakout55 and hi55 is not None:
+        ideal_entry, method = hi55, "55-day breakout level"
+    elif breakout20 and hi20 is not None:
+        ideal_entry, method = hi20, "20-day breakout level"
+    elif sma50 is not None:
+        ideal_entry, method = sma50, "50-day SMA (pullback support)"
+    else:
+        return None
+
+    if price is None or not ideal_entry:
+        return None
+
+    pct_above = round((price - ideal_entry) / ideal_entry * 100, 2)
+    return {
+        "ideal_entry": round(ideal_entry, 4),
+        "pct_above_ideal_entry": pct_above,
+        "entry_gate_pass": pct_above <= max_pct_above,
+        "entry_method": method,
+    }
+
+
 def compute_reward_risk(price, high52, atr20, breakout20=False, breakout55=False,
                          stop_pct=RR_STOP_PCT,
                          near_high_threshold_pct=RR_NEAR_HIGH_THRESHOLD_PCT,
@@ -348,6 +383,7 @@ def cmd_indicators(args):
         pass
 
     rr = compute_reward_risk(price, hi52, atr20, breakout20, breakout55)
+    entry = compute_ideal_entry(price, sma50, hi20, hi55, breakout20, breakout55)
 
     out({
         "symbol": symbol,
@@ -360,8 +396,14 @@ def cmd_indicators(args):
         "52wk_low": lo52,
         "pct_from_52wk_high": pct_from_hi,
         "pct_from_52wk_low": pct_from_lo,
+        "20d_high": hi20,
+        "55d_high": hi55,
         "breakout20": breakout20,
         "breakout55": breakout55,
+        "ideal_entry": entry["ideal_entry"] if entry else None,
+        "pct_above_ideal_entry": entry["pct_above_ideal_entry"] if entry else None,
+        "entry_gate_pass": entry["entry_gate_pass"] if entry else False,
+        "entry_method": entry["entry_method"] if entry else None,
         "reward_pct": rr["reward_pct"] if rr else None,
         "risk_pct": rr["risk_pct"] if rr else None,
         "rr_ratio": rr["rr_ratio"] if rr else None,

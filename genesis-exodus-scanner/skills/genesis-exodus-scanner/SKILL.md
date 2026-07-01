@@ -37,9 +37,12 @@ KILL SWITCH (durable, survives runs): the master flag lives in `state/control.js
 the user via `ops.py ack-losses "<note>"`. Editing this text alone does NOT stop a scheduled run —
 the control file does.
 
-MANDATORY FIRST GATE — preflight (every run, before any order logic):
-`python3 scripts/ops.py preflight --nav <current_portfolio_value>`
+MANDATORY FIRST GATE — preflight (every run, before any order logic). `get_portfolio` returns both
+NAV and buying power in one call, so pass both together:
+`python3 scripts/ops.py preflight --nav <current_portfolio_value> --buying-power <confirmed_bp>`
 If `new_buys_allowed` is false -> place NO new buys (monitoring + risk-reducing sells still run).
+`--buying-power` is optional but should always be passed once BP is known -- it folds the
+deployable-capital floor (see §2's fast-path) into the same consolidated verdict.
 
 ACTIVE GROWTH PROFILE (CUSTOMIZE — backtest before trusting these numbers):
 ```
@@ -78,8 +81,11 @@ discovery, sensors. Compute every technical level from FMP — never fabricate. 
 
 ## 2. REQUIRED SCAN ORDER (every scan)
 NO-DEPLOYABLE-CAPITAL FAST-PATH: skip buy discovery entirely (no screener/movers/indicators, short
-report) whenever ANY of: confirmed buying power is $0; BP below your smallest-deployable floor; the
-daily buy cap is reached; preflight returned new_buys_allowed=false. STILL do the cheap safety steps
+report) whenever `preflight`'s `new_buys_allowed` is false -- this now covers ALL of it in one
+check: `deployable_capital_ok` (confirmed buying power below the $10 floor -- see
+references/playbooks.md for the derivation -- catches both "$0" and "technically nonzero but too
+small to ever buy 2 whole shares of anything in our universe"), the daily buy cap, the kill switch,
+live-trading-off, and the daily/consecutive-loss halts. STILL do the cheap safety steps
 every run: account check, preflight, mark each position vs entry, check/ratchet stops, place any
 genuinely-hit profit-recovery sell.
 
@@ -137,8 +143,9 @@ Run both engines; Turtle only if it also passes Genesis-quality. Score 0–10 ea
 confidence >=7, R:R >=2:1 (computed by `fmp.py indicators` -- see R:R FORMULA below, never eyeballed),
 liquidity_pass (`fmp.py indicators`'s avgDollarVol20 >= $3,000,000/day -- see references/playbooks.md
 "Universe rules" for the full set of persisted screener defaults), market filter passes, stop defined,
-price <=8% above ideal entry, confirmed cash, tradability OK, NEWS CHECK passed (see below -- mandatory,
-not advisory), order review clean, no safety-rule fail, within hours, not a duplicate.
+entry_gate_pass (`fmp.py indicators`'s deterministic "price <=8% above ideal entry" check -- see
+IDEAL ENTRY below, never eyeballed), confirmed cash, tradability OK, NEWS CHECK passed (see below --
+mandatory, not advisory), order review clean, no safety-rule fail, within hours, not a duplicate.
 PRIMARY ENTRY: own the highest relative-strength names that pass the full trend template; a fresh
 breakout is a bonus, not a prerequisite. This universe is NOT mega-cap-only -- the screener defaults
 to a $300M market-cap floor, so quality small/mid-caps are in scope as long as they clear the trend
@@ -168,6 +175,14 @@ case reward = 3x ATR20 as a measured-continuation proxy instead (there's no over
 measure against). `rr_ratio = reward_pct / 10`; the gate needs `rr_ratio >= 2.0` (`rr_pass` in the JSON
 output). Missing 52wk-high or ATR data -> the function returns null -> treat as a gate FAILURE, never
 guess a level to force a pass.
+
+IDEAL ENTRY (deterministic, computed by `fmp.py indicators SYM` -- see references/playbooks.md for the
+full derivation + worked examples): if confirmed breaking out (`breakout55`, else `breakout20`), ideal
+entry is the level just cleared (55-day or 20-day high) -- buying at/near the breakout, not chasing it.
+Otherwise ideal entry is the 50-day SMA -- the natural pullback/support level for "own the leader" (which
+never required a fresh breakout). `pct_above_ideal_entry = (price - ideal_entry) / ideal_entry * 100`;
+the gate needs `pct_above_ideal_entry <= 8.0` (`entry_gate_pass`). Missing SMA50/breakout-level data ->
+the function returns null -> treat as a gate FAILURE.
 
 SIZING: size each entry at the lesser of $2,000 and 20% of equity (derived from RISK_PER_TRADE=2% of
 equity / INITIAL_STOP=10%, at the ~$10,000 account funding level this was tuned for: 2% of $10,000 =

@@ -50,6 +50,63 @@ The 3% "near-high" threshold and the 3x ATR multiple (`RR_NEAR_HIGH_THRESHOLD_PC
 active growth profile — backtest before changing them, and expect the pass/fail line to move
 candidates like INTC (very close to 2:1 already) across it.
 
+## Ideal entry (the SKILL.md §7 "price <= 8% above ideal entry" gate)
+
+This was undefined prose until now — SKILL.md required the check without ever specifying what
+"ideal entry" *is*. It's now computed deterministically by `fmp.py indicators SYM`
+(`compute_ideal_entry()` in `scripts/fmp.py`), returned as `ideal_entry` /
+`pct_above_ideal_entry` / `entry_gate_pass` / `entry_method`:
+
+- **Confirmed breaking out** (`breakout55`, or `breakout20` if not `breakout55`): ideal entry is
+  the level just cleared — the 55-day or 20-day high. Buying right at/near a fresh breakout is the
+  ideal Turtle-style entry; buying it 15% past the breakout level is chasing.
+- **Otherwise** (the far more common case for Genesis's primary "own the leader" style, which
+  explicitly doesn't require a fresh breakout): ideal entry is the **50-day SMA** — the natural
+  pullback/support level in an established uptrend. A name trading far above its own 50-day
+  average has already run; entering there has a worse risk profile than catching it on a
+  controlled pullback toward that average.
+- `pct_above_ideal_entry = (price - ideal_entry) / ideal_entry * 100`; the gate needs
+  `pct_above_ideal_entry <= 8.0` (`entry_gate_pass`).
+- Missing SMA50/breakout-level data -> the function returns `null` -> treat as a gate **failure**.
+
+Worked examples (all previously analyzed candidates -- none of these needed the breakout-level
+branch, since none had `breakout20`/`breakout55` true that day):
+
+| Symbol | Price | 50-DMA | Method | % above ideal entry | Passes <=8%? |
+|---|---|---|---|---|---|
+| INTC | $127.02 | $112.30 | 50-day SMA | 13.11% | No |
+| NBIS | $229.18 | $213.91 | 50-day SMA | 7.14% | **Yes** |
+| TTWO | $250.32 | $225.54 | 50-day SMA | 10.99% | No |
+
+Notably, INTC and TTWO both already failed on other gates (R:R and trend-template, respectively)
+— this check independently confirms both were too extended above their own support to be a good
+entry regardless, which is a useful cross-check rather than a redundant one: a candidate can pass
+R:R and trend template while still being priced too far from a sane entry point (e.g. mid-breakout
+momentum names right before this check was added would have slipped through on that basis alone).
+
+For Exodus-sourced candidates (buying today's plunge itself), this gate is usually trivially
+satisfied or even negative (price below the 50-DMA reference) -- that's expected and fine. The
+gate exists to stop chasing an extended Genesis-style move, not to add friction to a legitimate
+capitulation buy.
+
+## Deployable-capital floor (SKILL.md §2's no-deployable-capital fast-path)
+
+Also previously undefined -- SKILL.md said "BP below your smallest-deployable floor" without a
+number. `scripts/ops.py`'s `DEPLOYABLE_CAPITAL_FLOOR = $10.00`, checked via
+`ops.py preflight --nav <nav> --buying-power <bp>` (`deployable_capital_ok` in its output).
+
+Derivation: the whole-share rule requires >=2 shares of any new entry, and the screener's own
+`UNIVERSE_PRICE_FLOOR` is $5.00 (`scripts/fmp.py`) -- so $10 (2 x $5) is the absolute floor below
+which no valid buy exists anywhere in our own universe, full stop. This isn't meant to represent
+"enough capital for a *meaningful* trade" (in practice, sizing/R:R/liquidity will reject almost
+anything bought with barely-above-floor capital anyway) -- it's the precise boundary below which
+running discovery at all is provably pointless, so the fast-path exists mainly to save wasted
+API/token cost on a scan that could never place an order regardless of what it found.
+
+The two constants ($5 price floor in `fmp.py`, $10 deployable floor in `ops.py`) are duplicated
+across the two independent CLI scripts (they don't import each other) rather than shared -- if you
+change `UNIVERSE_PRICE_FLOOR`, update `DEPLOYABLE_CAPITAL_FLOOR` to match (2x it) by hand.
+
 ## Genesis engine — "own the leaders"
 
 Primary entry style. Discovery: `fmp.py screener` for a quality, liquid US universe (real
