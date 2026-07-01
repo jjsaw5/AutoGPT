@@ -1,0 +1,7 @@
+# Runtime state is private and machine-specific -- never commit it.
+# Only the example env file and this .gitignore itself are tracked.
+*
+!.gitignore
+!fmp.env.example
+!cache/
+!cache/.gitkeep
