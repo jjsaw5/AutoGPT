@@ -93,7 +93,14 @@ genuinely-hit profit-recovery sell.
 9. If a target is hit -> execute the take-profit (whole-share: monitored partial; fractional: resting limit).
 10. Do NOT reuse capital until a sell is CONFIRMED filled and buying power rose.
 11. If confirmed cash AND hours allow -> run buy discovery.
-12. Rank candidates; require confidence >=7/10 and R:R >=2:1. Advisory sensors sharpen the call.
+11b. WATCHLIST RE-CHECK: load `state/watchlist.json`; for each entry, cheaply re-test its
+    `reevaluate_when` condition (usually just an `fmp.py indicators`/`earnings` call). Entries whose
+    condition is now met are folded into the candidate pool alongside fresh screener/movers
+    discoveries -- they still go through every gate below, including a FRESH mandatory news check
+    (the reason they were watchlisted may be stale, resolved, or replaced by something new).
+    Entries not yet triggered are left as-is; don't re-run their full gate stack every scan.
+12. Rank candidates (including any triggered watchlist entries); require confidence >=7/10 and
+    R:R >=2:1. Advisory sensors sharpen the call.
 12b. MANDATORY NEWS CHECK on the top candidate (not optional, not skippable to save time/tokens):
     run `fmp.py news SYM`, read the actual headlines, and record an explicit pass/fail + one-line
     reason. See §7 NEWS CHECK for the full requirement -- a candidate that fails this is downgraded

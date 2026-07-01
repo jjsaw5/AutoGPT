@@ -130,6 +130,32 @@ CLOSED          (position fully exited; ledger-add the outcome)
 Re-derive state from the live account every scan (`get_equity_positions` + `get_equity_orders`
 are the source of truth) — never trust a state carried over from a prior scan's notes.
 
+## Watchlist entries (state/watchlist.json, SKILL.md §2 step 11b)
+
+A candidate that's interesting but doesn't clear every gate today (failed trend template, failed
+R:R, or was disqualified by the mandatory news check) gets logged here instead of just forgotten,
+so future scans re-check it cheaply without re-running full discovery. Schema:
+
+```json
+{
+  "watchlist": [
+    {
+      "symbol": "TTWO",
+      "added_at": "2026-07-01",
+      "added_reason": "why it was interesting + why it didn't qualify yet",
+      "reevaluate_when": "the specific, checkable condition that would flip the verdict",
+      "last_checked": {"date": "...", "price": 0.0, "trend_template_pass": false, "rr_ratio": 0.0, "news_check": "PASS|FAIL (reason)"}
+    }
+  ]
+}
+```
+
+`reevaluate_when` must be something a scan can actually test cheaply (an indicators/earnings
+field crossing a threshold), not a vague narrative -- "re-check when 150-DMA crosses above
+200-DMA" is checkable every scan for free; "re-check when the market likes it again" is not.
+Every trigger check still runs the FULL gate stack (including a fresh mandatory news check) before
+any buy -- being on the watchlist waives nothing, it just saves re-running discovery from scratch.
+
 ## Universe rules (hard scope, SKILL.md §7)
 
 Never, without explicit manual approval: options, shorting, margin, leveraged ETFs, crypto,
