@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "voldesk"
+version = "0.1.0"
+description = "Deterministic rule engine for the Vol Desk GEX/dealer-positioning options swing strategy. No live brokerage connection, no network calls -- pure decision logic."
+authors = ["AutoGPT contributors"]
+license = "MIT"
+readme = "README.md"
+packages = [{ include = "voldesk" }]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+
+[tool.poetry.scripts]
+voldesk = "voldesk.cli:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
