@@ -13,3 +13,13 @@
   2. DKNG clears $30 (the 20-day high ~$30.13 = confirmed breakout).
 - On a trigger: re-run the strength read + re-price the spread; if it clears, it's a manual
   bullish add that diversifies alongside KDP.
+
+## BB (BlackBerry) — bullish (call) idea, VETOED overbought  [added 2026-07-01]
+- Idea: long call (single-leg, calls now live-tradeable) on BB's monster uptrend.
+- Why NOT now: strongest raw momentum we've seen (golden cross, +67% vs 50-DMA, +165% vs
+  200-DMA, +292% rel strength, tripled in 63d) BUT RSI 81 => OVERBOUGHT VETO, and IV ~90%
+  (extreme). Parabolic blow-off — buying here = chasing the top with expensive premium.
+- Earnings: CLEAN (ER 9/24).
+- RE-EVALUATE IF BOTH: RSI cools back under ~70 (digested) AND BB holds above its rising
+  50-DMA (~$7.88 and climbing). A cooled-off trend = cleaner, cheaper entry on the next leg.
+- Do NOT chase short-dated/weekly calls here (theta + 90% IV + near-term reversal risk = worst combo).
