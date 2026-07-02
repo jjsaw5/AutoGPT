@@ -13,8 +13,11 @@ def _thesis(config, **overrides):
     return c, t
 
 
-def test_cheap_strong_swing_is_long_premium(config):
-    c, t = _thesis(config)
+def test_cheap_strong_swing_is_long_premium_when_it_fits(config):
+    # Cheap underlying: naked long premium (~$300) fits the $500 ceiling.
+    c = make_candidate("F", price=100.0, cap_tier=None)
+    c.price = 100.0
+    t = build_thesis(c, config)
     t.direction = Direction.BULLISH
     t.vol_regime = VolRegime.CHEAP
     t.horizon = Horizon.SWING
@@ -23,7 +26,20 @@ def test_cheap_strong_swing_is_long_premium(config):
     s = select_structure(c, t, config)
     assert s.structure_type == StructureType.LONG_CALL
     assert s.is_defined_risk
-    assert s.max_loss and s.max_loss > 0
+    assert s.max_loss and s.max_loss <= config.account["risk_high_conviction_max"]
+
+
+def test_expensive_long_premium_falls_back_to_spread(config):
+    # Pricey underlying: a naked long (~$900) exceeds the $500 ceiling => spread.
+    c, t = _thesis(config)  # price 300 => long call ~$900
+    t.direction = Direction.BULLISH
+    t.vol_regime = VolRegime.CHEAP
+    t.horizon = Horizon.SWING
+    t.conviction = 0.8
+    t.iv_rank = 15.0
+    s = select_structure(c, t, config)
+    assert s.structure_type == StructureType.DEBIT_VERTICAL
+    assert s.max_loss <= config.account["risk_high_conviction_max"]
 
 
 def test_rich_moderate_is_credit_spread(config):

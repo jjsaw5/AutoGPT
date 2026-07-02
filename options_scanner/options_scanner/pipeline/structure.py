@@ -83,7 +83,16 @@ def select_structure(
                     structure_type=StructureType.DEBIT_VERTICAL,
                     rationale="strong swing but elevated IVR — debit spread over naked long",
                 )
-            return _long_option(price, call=call)
+            # Prefer a naked long only when it fits the per-trade risk ceiling;
+            # otherwise fall back to a debit vertical sized to the cap.
+            long = _long_option(price, call=call)
+            if long.max_loss is not None and long.max_loss <= ceiling:
+                return long
+            return spread(
+                call=call, credit=False,
+                structure_type=StructureType.DEBIT_VERTICAL,
+                rationale="cheap vol, strong conviction, but naked long exceeds risk cap — debit spread",
+            )
         if conviction >= _MODERATE:
             return spread(
                 call=call, credit=False,
