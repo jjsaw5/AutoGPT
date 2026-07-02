@@ -11,17 +11,25 @@ from typing import Dict, List
 from .models import StockCandidate
 
 MOCK_STOCKS: List[StockCandidate] = [
+    # SLS: the textbook grind-up — steady multi-month climb on building
+    # volume (high up_week_ratio). PMPD below is the anti-pattern: a huge
+    # recent spike with choppy weeks. Their history fields exist so the
+    # grind-vs-spike distinction in scoring is exercised offline.
     StockCandidate(
         symbol="SLS", name="SmallCo Labs", price=1.85, market_cap=120_000_000,
         volume=33_000_000, avg_volume=9_000_000, exchange="NASDAQ",
         sector="Healthcare", year_high=2.10, year_low=0.65,
         price_avg_50=1.40, price_avg_200=1.05, change_pct=8.2,
+        history_days=140, avg_volume_30d=9_000_000, volume_trend=1.9,
+        ret_1m=0.18, ret_3m=0.45, ret_6m=0.85, up_week_ratio=0.72,
     ),
     StockCandidate(
         symbol="GRND", name="Grind Resources", price=2.40, market_cap=340_000_000,
         volume=4_500_000, avg_volume=2_100_000, exchange="NASDAQ",
         sector="Basic Materials", year_high=3.0, year_low=1.10,
         price_avg_50=2.05, price_avg_200=1.70, change_pct=3.1,
+        history_days=140, avg_volume_30d=2_100_000, volume_trend=1.3,
+        ret_1m=0.08, ret_3m=0.20, ret_6m=0.55, up_week_ratio=0.65,
     ),
     StockCandidate(
         symbol="QTUM", name="Quantum Micro", price=4.10, market_cap=900_000_000,
@@ -34,6 +42,8 @@ MOCK_STOCKS: List[StockCandidate] = [
         volume=22_000_000, avg_volume=800_000, exchange="NASDAQ",
         sector="Technology", year_high=0.95, year_low=0.20,
         price_avg_50=0.40, price_avg_200=0.35, change_pct=41.0,
+        history_days=140, avg_volume_30d=800_000, volume_trend=6.0,
+        ret_1m=1.20, ret_3m=1.60, ret_6m=1.20, up_week_ratio=0.42,
     ),
     StockCandidate(
         symbol="STBL", name="Stable Boring Co", price=6.20, market_cap=1_500_000_000,

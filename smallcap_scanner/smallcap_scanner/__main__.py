@@ -1,10 +1,11 @@
 """Command-line entry point: ``python -m smallcap_scanner <stage> [options]``.
 
-Three stages, each independently runnable and saveable:
+Stages, each independently runnable and saveable:
   fundamentals  FMP-only scan -> the standalone prospects list
   social        ApeWisdom-only scan -> what's trending on the tracked subs
   combined      cross-reference a social list against FMP -> updated analysis
   all           runs all three in sequence in one process
+  trend         persistence report over saved scans (no live scan needed)
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from .pipeline import (
     dump_social,
     format_social_table,
     format_table,
+    format_trend_table,
     load_social,
     scan_combined,
     scan_fundamentals,
@@ -81,6 +83,22 @@ def build_parser() -> argparse.ArgumentParser:
                      help="Include tickers outside the configured price/market-cap band "
                           "in the combined stage (hidden by default).")
 
+    pt = sub.add_parser("trend",
+                         help="Mention-persistence report over saved scans — which "
+                              "tickers keep showing up day after day. Reads the scans "
+                              "directory; no live scan or API keys needed.")
+    pt.add_argument("--scans-dir", default=None,
+                     help="Directory of saved scan JSONs (default: SCANS_DIR env or 'scans').")
+    pt.add_argument("--days", type=int, default=None,
+                     help="Lookback window in days (default: TREND_LOOKBACK_DAYS env or 14).")
+    pt.add_argument("--min-days", type=int, default=2,
+                     help="Only show tickers seen on at least this many scan-days.")
+    pt.add_argument("--top", type=int, default=40, help="Max rows to show.")
+    pt.add_argument("--json", action="store_true", help="Emit JSON instead of a table.")
+    pt.add_argument("--out", help="Also write the JSON result to this file.")
+    pt.add_argument("--quiet", action="store_true", help="Suppress the banner.")
+    pt.add_argument("-v", "--verbose", action="store_true", help="Debug logging.")
+
     return p
 
 
@@ -119,6 +137,18 @@ def main(argv: list[str] | None = None) -> int:
         format="%(levelname)s %(name)s: %(message)s",
     )
     cfg = Config()
+
+    if args.stage == "trend":
+        from .trend import trend_report
+
+        rows = trend_report(
+            args.scans_dir or cfg.scans_dir,
+            lookback_days=args.days or cfg.trend_lookback_days,
+            min_days=args.min_days,
+        )[: args.top]
+        _emit([r.to_row() for r in rows], format_trend_table(rows), args,
+              "persistent tickers")
+        return 0
 
     if args.stage == "fundamentals":
         if not _check_fmp(cfg, args.mock):

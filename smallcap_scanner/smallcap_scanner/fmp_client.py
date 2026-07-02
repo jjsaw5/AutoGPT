@@ -1,11 +1,14 @@
 """Thin wrapper over the Financial Modeling Prep REST API.
 
 Only the endpoints the scanner needs are implemented:
-  * company screener -> defines the candidate universe
-  * quote            -> enriches with 50/200d averages, 52w high/low, volume
+  * company screener      -> defines the candidate universe
+  * quote                 -> 50/200d averages, 52w high/low, today's volume
+  * historical-price-eod  -> months of price/volume history, powering the
+                             grind-up / rising-volume metrics (metrics.py)
 
 Uses the current /stable endpoints; FMP retired the legacy /api/v3 endpoints
-(including batch quote) in 2025, so quotes are fetched one symbol per request.
+(including batch quote) in 2025, so everything is fetched one symbol per
+request.
 
 Docs: https://site.financialmodelingprep.com/developer/docs
 """
@@ -19,6 +22,7 @@ from typing import Dict, List
 import requests
 
 from .config import Config
+from .metrics import apply_history_metrics, compute_history_metrics
 from .models import StockCandidate
 
 log = logging.getLogger(__name__)
@@ -146,6 +150,39 @@ class FMPClient:
             c.change_pct = _f(q.get("changePercentage"))
             if (i + 1) % 50 == 0:
                 log.info("enriched %d/%d quotes", i + 1, len(to_enrich))
+
+    def get_eod_history(self, symbol: str) -> List[dict]:
+        """Fetch daily price/volume history rows for one symbol.
+
+        Rows look like {"symbol", "date", "price", "volume"}, newest first.
+        Returns [] on any per-symbol failure — history is an enhancement, not
+        a requirement, so one bad symbol must never abort a batch.
+        """
+        try:
+            data = self._get("historical-price-eod/light", {"symbol": symbol})
+        except (FMPError, requests.RequestException) as exc:
+            log.debug("history lookup failed for %s: %s", symbol, exc)
+            return []
+        if not isinstance(data, list):
+            return []
+        # ~200 rows covers the 6-month return window with buffer.
+        return data[:200]
+
+    def enrich_history(self, candidates: List[StockCandidate]) -> None:
+        """Populate grind-up metrics (metrics.py) in place, one call/symbol.
+
+        Caller decides which candidates deserve the extra API spend (see
+        FMP_HISTORY_LIMIT); this just does the fetching. A small pause between
+        requests keeps a burst of history calls from tripping FMP's rate
+        limiter after the quote-enrichment pass already used much of it.
+        """
+        for i, c in enumerate(candidates):
+            rows = self.get_eod_history(c.symbol)
+            if rows:
+                apply_history_metrics(c, compute_history_metrics(rows))
+            if (i + 1) % 25 == 0:
+                log.info("history enriched %d/%d", i + 1, len(candidates))
+            time.sleep(0.12)
 
     def quote_symbols(self, symbols: List[str]) -> Dict[str, StockCandidate]:
         """Build fresh StockCandidates for arbitrary symbols via /stable/quote.

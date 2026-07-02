@@ -63,36 +63,77 @@ def score_fundamental(stock: StockCandidate, cfg: Config) -> tuple[float, list[s
 
 
 def score_momentum(stock: StockCandidate) -> tuple[float, list[str]]:
+    """0-100 across four families of evidence (max points in parens):
+
+      trend vs moving averages (35) — quote data, the original snapshot check
+      grind-up pattern (35)         — EOD history: multi-month returns plus
+                                       week-over-week consistency, the actual
+                                       SLS shape; a one-day spike earns the
+                                       return points but not the consistency
+      volume behaviour (20)         — volume *building* over weeks, plus
+                                       today's surge vs a true trailing avg
+      52w-range position (10)       — off the lows with room to the highs
+
+    History-based parts contribute 0 when history wasn't fetched (candidate
+    outside FMP_HISTORY_LIMIT, or the API call failed) — the quote-based
+    parts still work, so scores degrade gracefully rather than vanish.
+    Continuous scaling (not fixed steps) also breaks the score ties that made
+    earlier stage-1 lists read as big blocks of identical scores.
+    """
     reasons: list[str] = []
-    if stock.price_avg_50 is None and stock.price_avg_200 is None:
+    if (
+        stock.price_avg_50 is None
+        and stock.price_avg_200 is None
+        and stock.history_days == 0
+    ):
         return 0.0, reasons
 
     score = 0.0
+
+    # --- trend vs moving averages (quote data) ---
     if stock.price_avg_50 and stock.price > stock.price_avg_50:
-        score += 25
+        score += 15
         reasons.append("above 50d avg")
     if stock.price_avg_200 and stock.price > stock.price_avg_200:
-        score += 20
+        score += 10
         reasons.append("above 200d avg")
     if (
         stock.price_avg_50
         and stock.price_avg_200
         and stock.price_avg_50 > stock.price_avg_200
     ):
-        score += 15
+        score += 10
         reasons.append("50d > 200d (uptrend)")
 
+    # --- grind-up pattern (EOD history) ---
+    if stock.ret_3m is not None and stock.ret_3m > 0:
+        score += 15 * _clamp(stock.ret_3m / 0.5, 0, 1)
+        reasons.append(f"+{stock.ret_3m * 100:.0f}% over 3 months")
+    if stock.ret_6m is not None and stock.ret_6m > 0:
+        score += 10 * _clamp(stock.ret_6m / 1.0, 0, 1)
+        reasons.append(f"+{stock.ret_6m * 100:.0f}% over 6 months")
+    if stock.up_week_ratio is not None and stock.up_week_ratio > 0.5:
+        score += 10 * _clamp((stock.up_week_ratio - 0.5) / 0.3, 0, 1)
+        if stock.up_week_ratio >= 0.6:
+            reasons.append(
+                f"{stock.up_week_ratio * 100:.0f}% of weeks closed up (steady climb)"
+            )
+
+    # --- volume behaviour ---
+    if stock.volume_trend is not None and stock.volume_trend > 1.1:
+        score += 10 * _clamp((stock.volume_trend - 1.0) / 1.0, 0, 1)
+        reasons.append(f"volume building: {stock.volume_trend:.1f}x its baseline")
     surge = stock.volume_surge
     if surge and surge > 1.2:
-        score += _clamp(20 * math.log1p(surge - 1) / math.log1p(4), 0, 25)
-        reasons.append(f"volume {surge:.1f}x average")
+        score += _clamp(10 * math.log1p(surge - 1) / math.log1p(4), 0, 10)
+        reasons.append(f"volume {surge:.1f}x average today")
 
-    # Off the lows but with room left to the highs == early in the move.
+    # --- off the lows but with room left to the highs == early in the move ---
     above_low = stock.pct_above_year_low
     below_high = stock.pct_below_year_high
     if above_low is not None and below_high is not None:
         if above_low > 20 and below_high > 25:
-            score += 15
+            score += 10
             reasons.append(
                 f"+{above_low:.0f}% off 52w low, still {below_high:.0f}% below high"
             )
@@ -124,6 +165,20 @@ def score_social(reddit: Optional[RedditSignal]) -> tuple[float, list[str]]:
 
     # Engagement.
     score += 0.15 * _scale_log(reddit.upvotes_sum, 500)
+
+    # Cross-scan persistence (set by trend.annotate_signals when saved scans
+    # exist). Showing up day after day is the "talked about for months"
+    # signal — worth more than any single-day mention count.
+    if reddit.streak_days >= 2:
+        score += _clamp(4.0 * (reddit.streak_days - 1), 0, 12)
+        reasons.append(f"trending {reddit.streak_days} scan-days in a row")
+    if (
+        reddit.mention_growth is not None
+        and reddit.mention_growth >= 1.5
+        and reddit.days_seen >= 2
+    ):
+        score += 3
+        reasons.append(f"mentions {reddit.mention_growth:.1f}x prior-day average")
 
     return _clamp(score), reasons
 

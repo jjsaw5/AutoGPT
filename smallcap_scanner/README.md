@@ -17,6 +17,19 @@ It runs as **three independent, chainable stages** rather than one merged list:
 `all` runs all three in one pass. Each stage can be saved to JSON and the
 social list can be reused later (`combined --from-file`) instead of re-scanning.
 
+Two deeper layers run on top:
+
+- **Grind-up metrics** — top candidates get ~6 months of EOD price/volume
+  history (FMP), yielding 3/6-month returns, week-over-week climb
+  consistency (`UPWK%`), a true trailing average volume (making the `VOLx`
+  surge column real), and a volume-building trend. This is what
+  distinguishes an SLS-style steady climb from a one-day pump.
+- **Mention persistence** — every saved scan feeds a trend layer
+  (`DAYS`/`STRK`/`GROW` columns, plus `python -m smallcap_scanner trend`)
+  that tracks which tickers keep showing up day after day — the "talked
+  about for months" signal a single scan can't see. The more days of saved
+  scans accumulate, the smarter this gets.
+
 For a detailed, step-by-step walkthrough of exactly what each stage does
 (filters, formulas, current default values, and where to change them), see
 [`docs/WORKFLOW.md`](docs/WORKFLOW.md).
@@ -152,6 +165,8 @@ python -m smallcap_scanner combined     [--mock] [--top N] [--json] [--out FILE]
                                          [--show-out-of-range]
 python -m smallcap_scanner all          [--mock] [--top N] [--json] [--out FILE]
                                          [--social-limit N] [--show-out-of-range]
+python -m smallcap_scanner trend        [--scans-dir DIR] [--days N] [--min-days N]
+                                         [--top N] [--json] [--out FILE]
 ```
 
 - `--mock` — run on bundled offline sample data (no keys).
@@ -223,7 +238,9 @@ smallcap_scanner/
   __main__.py           CLI entry point (fundamentals/social/combined/all subcommands)
   config.py             env-driven config + thresholds
   models.py             dataclasses passed between stages
-  fmp_client.py         FMP /stable screener + quote wrapper
+  fmp_client.py         FMP /stable screener + quote + EOD-history wrapper
+  metrics.py            grind-up metrics from EOD history (pure, offline)
+  trend.py              cross-scan mention-persistence layer
   apewisdom_client.py   no-auth ApeWisdom mention/upvote aggregator
   known_largecaps.py    maintained large-cap/ETF blocklist (pre-filters stage 3)
   reddit_client.py      PRAW OAuth scan — for subs ApeWisdom doesn't track

@@ -100,6 +100,20 @@ class Config:
     fmp_enrich_limit: int = field(
         default_factory=lambda: _get_int("FMP_ENRICH_LIMIT", 300)
     )
+    # How many top-ranked candidates get the second, deeper enrichment pass
+    # (EOD price/volume history -> grind-up metrics). One extra API call per
+    # candidate, so this stays much smaller than fmp_enrich_limit: candidates
+    # are ranked on quote data first, then the top N are re-scored with
+    # history.
+    fmp_history_limit: int = field(
+        default_factory=lambda: _get_int("FMP_HISTORY_LIMIT", 50)
+    )
+    # Where scan JSONs are saved/read for the cross-scan trend layer, and how
+    # many days back mention-persistence looks.
+    scans_dir: str = field(default_factory=lambda: os.getenv("SCANS_DIR", "scans"))
+    trend_lookback_days: int = field(
+        default_factory=lambda: _get_int("TREND_LOOKBACK_DAYS", 14)
+    )
 
     # "auto" (default): ApeWisdom only, no credentials needed. "praw":
     # official Reddit OAuth, covering every subreddit in `subreddits`

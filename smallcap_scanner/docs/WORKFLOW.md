@@ -54,36 +54,55 @@ STEP 1: FUNDAMENTALS          STEP 2: SOCIAL              STEP 3: COMBINED
    This typically returns several hundred candidates (502 in the last live
    test run).
 
-2. **Enrich.** For up to `FMP_ENRICH_LIMIT` candidates (default 300,
+2. **Enrich (quotes).** For up to `FMP_ENRICH_LIMIT` candidates (default 300,
    smallest-market-cap names prioritized), call FMP's `/stable/quote` to pull
    50-day average price, 200-day average price, 52-week high/low, and
    today's volume/% change. This is one HTTP request per symbol (FMP's batch
    quote endpoint isn't available on the current plan), so a broad screen can
    take ~30–60 seconds.
 
-3. **Score.** Two sub-scores, each 0–100:
+3. **Enrich (history) — the grind-up pass.** Candidates are ranked once on
+   quote data, then the top `FMP_HISTORY_LIMIT` (default 50) get a second,
+   deeper call to `/stable/historical-price-eod/light` (~6 months of daily
+   price/volume). From that, `metrics.py` computes:
+   - **true 30-day average volume** (excluding today, so a surge can't
+     inflate its own baseline) — this made the `VOLx` column real; it used
+     to read a meaningless 1.0 for everything
+   - **1/3/6-month returns**
+   - **up-week ratio** — fraction of recent weeks that closed higher; the
+     "steady climb" signature that separates an SLS-style grind from a
+     one-day pump (both can have big returns; only the grind has this)
+   - **volume trend** — last 10 days' average volume vs. the prior 30's;
+     >1 means volume is *building*, the other half of the thesis
+
+   Everything is then re-ranked with these metrics included.
+
+4. **Score.** Two sub-scores, each 0–100:
 
    - **Fundamental score** (`scoring.score_fundamental`): rewards a lower
      price within the band (more option leverage), higher liquidity (log
      scale, saturating around 10× the volume floor), and a market cap in the
      lower-middle of the configured band.
-   - **Momentum score** (`scoring.score_momentum`): rewards price above its
-     50-day average (+25), above its 200-day average (+20), 50-day average
-     above 200-day average i.e. uptrend (+15), volume above 1.2× normal
-     (up to +25, log scale), and being meaningfully off the 52-week low while
-     still meaningfully below the 52-week high — i.e. "moving but not already
-     topped out" (+15).
+   - **Momentum score** (`scoring.score_momentum`), four families of
+     evidence (max points): trend vs. moving averages (35), grind-up pattern
+     from history — multi-month returns + week-over-week consistency (35),
+     volume behaviour — building trend + today's surge vs. true average (20),
+     and 52-week-range position — off the lows with room to the highs (10).
+     Continuous scaling breaks the score ties the old step-function produced.
+     History-based parts contribute 0 when history wasn't fetched, so scores
+     degrade gracefully for candidates outside the history budget.
 
    These two combine into the composite using `WEIGHT_FUNDAMENTAL` (default
    0.30) and `WEIGHT_MOMENTUM` (default 0.30), renormalized so the missing
    social weight doesn't drag the score down — this list never sees social
    data at all.
 
-4. **Flag.** Every candidate gets checked against `scoring.risk_flags()`:
+5. **Flag.** Every candidate gets checked against `scoring.risk_flags()`:
    `SUB_$1` (delisting/illiquid-options risk), `THIN_VOLUME`,
    `ALREADY_PARABOLIC_TODAY` (>25% today — chasing risk).
 
-**Output:** ranked list, sorted by composite score, descending.
+**Output:** ranked list, sorted by composite score, descending. The table's
+`R3M%` and `UPWK%` columns surface the grind-up evidence directly.
 
 ---
 
@@ -122,8 +141,26 @@ STEP 1: FUNDAMENTALS          STEP 2: SOCIAL              STEP 3: COMBINED
    defaults to a neutral full bonus rather than penalizing it — see "Known
    limitation" below), and engagement (upvotes, log scale).
 
-**Output:** ranked list of tickers with mention/upvote/subreddit data — no
-price or fundamental data yet.
+6. **Persistence annotation (the trend layer).** If saved scans exist in
+   `SCANS_DIR` (default `scans/` — every `--out` run adds one), each live
+   ticker is annotated from them (`trend.py`):
+   - **days_seen** — distinct scan-days it appeared (within
+     `TREND_LOOKBACK_DAYS`, default 14)
+   - **streak_days** — consecutive scan-days ending today; counted over
+     *scan-days*, so weekends/missed days don't break a streak
+   - **mention_growth** — today's mentions vs. its prior-day average
+
+   The original SLS was "talked about for six months" — a claim about time,
+   which no single scan can see. Persistence feeds the social score (a
+   ticker trending 4 scan-days in a row beats an identical one-day wonder)
+   and shows up in the `DAYS`/`STRK`/`GROW` columns.
+
+   There's also a standalone report needing no API keys or live scan:
+   `python -m smallcap_scanner trend` — "what has retail been consistently
+   talking about lately," ranked by streak.
+
+**Output:** ranked list of tickers with mention/upvote/subreddit data plus
+persistence — no price or fundamental data yet.
 
 **Known limitation:** ApeWisdom does its own ticker-detection. A handful of
 short English words that are also real tickers (`ALL` = Allstate, `BE` =
@@ -157,6 +194,9 @@ a saved step-2 result instead of re-scanning)
    call per ticker, regardless of whether it passed step 1's screen. This is
    the reverse direction from step 1: instead of filtering FMP results by
    social mentions, we're filtering FMP lookups by what's socially relevant.
+   Names that fit the price/cap band then get the same EOD-history pass as
+   step 1 (grind-up metrics) — out-of-range names that would be hidden anyway
+   don't waste history calls.
 
 4. **Score with the full blend**, all three sub-scores combined using
    `WEIGHT_FUNDAMENTAL` (0.30) / `WEIGHT_MOMENTUM` (0.30) / `WEIGHT_SOCIAL`
@@ -199,6 +239,9 @@ filter manually.
 | Which subreddits | `config.py` `DEFAULT_APEWISDOM_SUBREDDITS` | `APEWISDOM_SUBREDDITS` |
 | How much social vs. fundamentals matters in step 3 | `config.py` weights | `WEIGHT_FUNDAMENTAL`, `WEIGHT_MOMENTUM`, `WEIGHT_SOCIAL` |
 | How many social tickers get FMP-checked in step 3 | `config.py` | `SOCIAL_FMP_LIMIT` |
+| How many top names get the deep EOD-history pass | `config.py` | `FMP_HISTORY_LIMIT` |
+| The grind-up metric definitions | `metrics.py` | — |
+| Trend layer: where scans live / how far back it looks | `trend.py` | `SCANS_DIR`, `TREND_LOOKBACK_DAYS` |
 | The large-cap blocklist (what gets skipped before lookup) | `known_largecaps.py` | `EXTRA_LARGE_CAP_EXCLUSIONS` (add); `FILTER_LARGE_CAPS=false` (disable) |
 | Whether out-of-range tickers show in step 3's output | `pipeline.py` `hide_out_of_range` | CLI `--show-out-of-range` |
 | The actual scoring formulas | `scoring.py` (`score_fundamental`, `score_momentum`, `score_social`) | — |

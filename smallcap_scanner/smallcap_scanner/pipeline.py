@@ -36,14 +36,21 @@ log = logging.getLogger(__name__)
 def scan_fundamentals(
     cfg: Config, mock: bool = False, top_n: Optional[int] = 25
 ) -> List[ScoredCandidate]:
+    """Two-pass ranking: score the whole universe on screener+quote data,
+    then spend the deeper EOD-history budget (FMP_HISTORY_LIMIT) on the
+    preliminary top names and re-rank with the grind-up metrics filled in.
+    """
     if mock:
         from .mock_data import mock_stocks
 
         stocks = mock_stocks()
-    else:
-        stocks = _load_universe(cfg)
+        return scoring.rank_fmp_only(stocks, cfg)[:top_n]
 
+    stocks = _load_universe(cfg)
     ranked = scoring.rank_fmp_only(stocks, cfg)
+    if ranked:
+        _enrich_history(cfg, [c.stock for c in ranked[: cfg.fmp_history_limit]])
+        ranked = scoring.rank_fmp_only(stocks, cfg)
     return ranked[:top_n] if top_n else ranked
 
 
@@ -61,18 +68,39 @@ def _load_universe(cfg: Config) -> Dict[str, StockCandidate]:
     return stocks
 
 
+def _enrich_history(cfg: Config, candidates: List[StockCandidate]) -> None:
+    """Best-effort EOD-history enrichment for the given candidates."""
+    if not candidates:
+        return
+    from .fmp_client import FMPClient
+
+    log.info(
+        "fetching EOD history for %d candidates (FMP_HISTORY_LIMIT=%d)",
+        len(candidates), cfg.fmp_history_limit,
+    )
+    try:
+        FMPClient(cfg).enrich_history(candidates)
+    except Exception as exc:
+        log.warning("history enrichment failed: %s", exc)
+
+
 # ---------------------------------------------------------------------------
 # Stage 2: raw social discovery (no FMP filtering)
 # ---------------------------------------------------------------------------
 
 def scan_social(
-    cfg: Config, mock: bool = False, top_n: Optional[int] = None
+    cfg: Config,
+    mock: bool = False,
+    top_n: Optional[int] = None,
+    with_trend: bool = True,
 ) -> List[RedditSignal]:
     """Return tickers trending on the tracked subreddits, regardless of
     whether they'd pass the fundamental screen.
 
     Sorted by net-new mentions (the "heating up right now" signal) with total
-    mentions as a tiebreaker.
+    mentions as a tiebreaker. When saved scans exist in cfg.scans_dir, each
+    signal is annotated with cross-scan persistence (days_seen, streak_days,
+    mention_growth) — the "talked about for months, not just today" layer.
     """
     if mock:
         from .mock_data import MOCK_POSTS
@@ -83,6 +111,18 @@ def scan_social(
         )
     else:
         signals = _load_social_raw(cfg)
+
+    if with_trend and not mock and signals:
+        from .trend import annotate_signals
+
+        annotated = annotate_signals(
+            signals.values(), cfg.scans_dir, cfg.trend_lookback_days
+        )
+        if annotated:
+            log.info(
+                "trend layer: %d of %d tickers have prior-scan history in %s/",
+                annotated, len(signals), cfg.scans_dir,
+            )
 
     ranked = sorted(
         signals.values(),
@@ -204,6 +244,19 @@ def scan_combined(
         stocks = mock_quote_lookup(symbols)
     else:
         stocks = _quote_symbols(cfg, symbols)
+        # Spend the EOD-history budget only on names that will actually be
+        # shown: when out-of-range tickers are hidden anyway, fetching their
+        # history would be pure waste.
+        to_enrich = list(stocks.values())
+        if not show_out_of_range:
+            t = cfg.thresholds
+            to_enrich = [
+                s
+                for s in to_enrich
+                if t.price_min <= s.price <= t.price_max
+                and t.market_cap_min <= s.market_cap <= t.market_cap_max
+            ]
+        _enrich_history(cfg, to_enrich[: cfg.fmp_history_limit])
 
     reddit_map = {s.symbol: s for s in top_social}
     ranked = scoring.rank(stocks, reddit_map, cfg)
@@ -248,6 +301,8 @@ _COLUMNS = [
     ("social_score", "SOCIAL", 7),
     ("reddit_recent", "RDT", 5),
     ("vol_surge", "VOLx", 6),
+    ("ret_3m_pct", "R3M%", 7),
+    ("up_week_pct", "UPWK%", 6),
     ("flags", "FLAGS", 40),
 ]
 
@@ -271,6 +326,9 @@ _SOCIAL_COLUMNS = [
     ("mentions_total", "MENT", 6),
     ("mentions_recent", "NEW", 5),
     ("social_score", "SCORE", 6),
+    ("days_seen", "DAYS", 5),
+    ("streak_days", "STRK", 5),
+    ("mention_growth", "GROW", 6),
     ("unique_authors", "AUTH", 5),
     ("upvotes_sum", "UPVOTES", 8),
     ("subreddits", "SUBREDDITS", 30),
@@ -285,6 +343,32 @@ def format_social_table(signals: List[RedditSignal]) -> str:
         row["social_score"] = round(scoring.score_social(sig)[0], 1)
         cells = []
         for key, _, w in _SOCIAL_COLUMNS:
+            val = row.get(key)
+            val = "" if val is None else str(val)
+            cells.append(f"{val:<{w}}")
+        lines.append("  ".join(cells))
+    return "\n".join(lines)
+
+
+_TREND_COLUMNS = [
+    ("symbol", "TICKER", 7),
+    ("streak_days", "STRK", 5),
+    ("days_seen", "DAYS", 5),
+    ("days_total", "OF", 4),
+    ("latest_mentions", "LATEST", 7),
+    ("prior_avg_mentions", "PRIOR", 7),
+    ("growth", "GROW", 6),
+    ("subreddits", "SUBREDDITS", 30),
+]
+
+
+def format_trend_table(rows) -> str:
+    header = "  ".join(f"{title:<{w}}" for _, title, w in _TREND_COLUMNS)
+    lines = [header, "-" * len(header)]
+    for r in rows:
+        row = r.to_row()
+        cells = []
+        for key, _, w in _TREND_COLUMNS:
             val = row.get(key)
             val = "" if val is None else str(val)
             cells.append(f"{val:<{w}}")

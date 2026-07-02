@@ -27,6 +27,16 @@ class StockCandidate:
     price_avg_200: Optional[float] = None
     change_pct: Optional[float] = None  # today's % change
 
+    # Enrichment from EOD history (metrics.compute_history_metrics) — the
+    # "grind up on rising volume over months" signals. None until fetched.
+    history_days: int = 0
+    avg_volume_30d: Optional[float] = None  # true trailing avg, excludes today
+    volume_trend: Optional[float] = None  # 10d avg volume / prior 30d avg
+    ret_1m: Optional[float] = None
+    ret_3m: Optional[float] = None
+    ret_6m: Optional[float] = None
+    up_week_ratio: Optional[float] = None  # fraction of recent weeks closed up
+
     @property
     def pct_above_year_low(self) -> Optional[float]:
         if self.year_low and self.year_low > 0:
@@ -41,9 +51,15 @@ class StockCandidate:
 
     @property
     def volume_surge(self) -> Optional[float]:
-        """Today's volume as a multiple of average daily volume."""
-        if self.avg_volume and self.avg_volume > 0:
-            return self.volume / self.avg_volume
+        """Today's volume as a multiple of average daily volume.
+
+        Prefers the true trailing average from EOD history; the screener-era
+        fallback (avg_volume) can equal today's volume when both came from the
+        same snapshot, which reads as a meaningless 1.0x.
+        """
+        base = self.avg_volume_30d or self.avg_volume
+        if base and base > 0:
+            return self.volume / base
         return None
 
 
@@ -70,6 +86,12 @@ class RedditSignal:
     providers: List[str] = field(default_factory=list)
     author_diversity_known: bool = False
 
+    # Cross-scan persistence (trend.annotate_signals, computed from saved
+    # scan files). The "talked about for months, not just today" signal.
+    days_seen: int = 0  # distinct scan-days this ticker appeared, incl. today
+    streak_days: int = 0  # consecutive scan-days ending today
+    mention_growth: Optional[float] = None  # today's mentions / prior-day avg
+
     @property
     def author_diversity(self) -> float:
         """Unique authors / total mentions. Low values (one person posting a
@@ -94,6 +116,11 @@ class RedditSignal:
             "upvotes_sum": self.upvotes_sum,
             "subreddits": ",".join(self.subreddits),
             "providers": ",".join(self.providers),
+            "days_seen": self.days_seen,
+            "streak_days": self.streak_days,
+            "mention_growth": round(self.mention_growth, 2)
+            if self.mention_growth is not None
+            else None,
         }
 
 
@@ -121,6 +148,13 @@ class ScoredCandidate:
             "price": round(s.price, 2),
             "market_cap_m": round(s.market_cap / 1e6, 1) if s.market_cap else None,
             "vol_surge": round(s.volume_surge, 2) if s.volume_surge else None,
+            "ret_3m_pct": round(s.ret_3m * 100, 1) if s.ret_3m is not None else None,
+            "up_week_pct": round(s.up_week_ratio * 100, 0)
+            if s.up_week_ratio is not None
+            else None,
+            "vol_trend": round(s.volume_trend, 2)
+            if s.volume_trend is not None
+            else None,
             "pct_above_low": round(s.pct_above_year_low, 1)
             if s.pct_above_year_low is not None
             else None,
