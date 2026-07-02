@@ -83,6 +83,22 @@ scratchpad/scanner.py  ->  python3 scanner.py [put|call|both]
   falls back to curated liquid-optionable list if FMP screener throttles.
 Outputs ranked_dir.json {puts:[...], calls:[...]}.
 
+## SCANNER FIXES (2026-07-02) — surfaced by the HOOD "why did this fall through" review
+1) TIERED TREND CREDIT (was binary golden/death cross). A V-shaped recovery that
+   has reclaimed BOTH moving averages no longer loses the full 1.5 crossover
+   points just because the lagging 50/200 cross hasn't formed yet.
+     CALL: golden cross -> 1.5 | price>both MAs & rel>0 (no cross) -> 1.0 | else 0
+     PUT : death cross  -> 1.5 | price<both MAs & rel<0 (no cross) -> 1.0 | else 0
+   New flags: call "g" (above-both-MAs, cross lags) / put "d" (below-both, lags).
+   Effect: HOOD 10.1 -> 11.1; SNOW/NVO/COP now rank honestly instead of docked.
+2) DETERMINISTIC UNIVERSE. The screener returns 250 rows in arbitrary order; the
+   old bare [:120] silently dropped valid liquid names run-to-run (HOOD flickered
+   in/out — the real reason it never scored). Now sorted by market cap DESC before
+   truncating -> the 120 largest / most option-liquid names every run.
+NOTE: the scanner ranks TECHNICALS only — no earnings-catalyst logic, and the
+  earnings rule EXITS ~2d before every ER. "Beats-earnings" event plays (e.g. the
+  user's HOOD call) are out of scope BY DESIGN, not a scanner miss.
+
 ## FUNDING PLAN
 Target deposit ~$2,000 (not yet funded). Until then operate on ~$400 initial;
 expect most scans = NO TRADE on buying power.

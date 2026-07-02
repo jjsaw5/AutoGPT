@@ -194,7 +194,16 @@ def score_put(m):
     neg_rel = s["rel"] is not None and s["rel"] < 0
     support_break = s["price"] <= s["low20"] * 1.02
     rsi_weak = s["rsi"] is not None and s["rsi"] < 50
-    p += 1.0*below50 + 1.0*below200 + 1.5*death + 1.0*neg_rel + 1.0*support_break + 1.0*rsi_weak
+    # TIERED trend credit (mirror of the call side): a fresh breakdown that has
+    # already lost BOTH moving averages shouldn't be docked the full 1.5 just
+    # because the 50/200 death cross hasn't formed yet (50-DMA still above a
+    # falling 200-DMA — the lagging-crossover artifact on a fast rollover).
+    #   death cross confirmed                                  -> 1.5
+    #   price below both MAs + under-performing SPY (no cross)  -> 1.0
+    #   otherwise                                              -> 0.0
+    recovery_dn = (not death) and below50 and below200 and neg_rel
+    trend = 1.5 if death else (1.0 if recovery_dn else 0.0)
+    p += 1.0*below50 + 1.0*below200 + trend + 1.0*neg_rel + 1.0*support_break + 1.0*rsi_weak
     p += min(2.0, max(0, -s["pct50"]) / 5)
     p += min(2.0, max(0, -s["pct200"]) / 10)
     if s["rel"] is not None: p += min(2.0, max(0, -s["rel"]) / 10)
@@ -203,7 +212,8 @@ def score_put(m):
     # already-extended move (the BILI/JD lesson). Was a +1 score bonus — now a
     # hard veto, mirroring the call side's RSI>80 overbought veto.
     oversold = s["rsi"] is not None and s["rsi"] < 30
-    flags = "".join(["D" if death else "-", "B" if support_break else "-",
+    flags = "".join(["D" if death else ("d" if recovery_dn else "-"),
+                     "B" if support_break else "-",
                      "!" if oversold else "-"])
     return p, flags, oversold
 
@@ -214,7 +224,17 @@ def score_call(m):
     pos_rel = s["rel"] is not None and s["rel"] > 0
     breakout = s["price"] >= s["high20"] * 0.98          # at/near 20d high
     rsi_strong = s["rsi"] is not None and s["rsi"] > 50
-    p += 1.0*above50 + 1.0*above200 + 1.5*golden + 1.0*pos_rel + 1.0*breakout + 1.0*rsi_strong
+    # TIERED trend credit: a V-shaped recovery that has already reclaimed BOTH
+    # moving averages shouldn't be docked the full 1.5 just because the 50/200
+    # golden cross lags price (the HOOD case: price above both, 50-DMA still
+    # under a catching-up 200-DMA). The lagging crossover under-scored genuine
+    # leaders (RSI 67, +30% vs 50-DMA, +48% rel) out of the top ranks.
+    #   golden cross confirmed                                 -> 1.5
+    #   price above both MAs + out-performing SPY (no cross)    -> 1.0
+    #   otherwise                                              -> 0.0
+    recovery_up = (not golden) and above50 and above200 and pos_rel
+    trend = 1.5 if golden else (1.0 if recovery_up else 0.0)
+    p += 1.0*above50 + 1.0*above200 + trend + 1.0*pos_rel + 1.0*breakout + 1.0*rsi_strong
     p += min(2.0, max(0, s["pct50"]) / 5)
     p += min(2.0, max(0, s["pct200"]) / 10)
     if s["rel"] is not None: p += min(2.0, max(0, s["rel"]) / 10)
@@ -222,7 +242,8 @@ def score_call(m):
     if s["adx"] is not None and s["adx"] >= 20: p += 0.5  # trend quality
     overbought = s["rsi"] is not None and s["rsi"] > 80   # blow-off guard (put analog: RSI<30)
     near_high = s["price"] >= s["high52"] * 0.98
-    flags = "".join(["G" if golden else "-", "U" if breakout else "-",
+    flags = "".join(["G" if golden else ("g" if recovery_up else "-"),
+                     "U" if breakout else "-",
                      "!" if overbought else "-"])
     return p, flags, overbought
 
@@ -232,7 +253,14 @@ try:
               priceMoreThan=5, priceLowerThan=400, volumeMoreThan=2000000,
               marketCapMoreThan=2000000000, isActivelyTrading="true",
               isEtf="false", isFund="false", limit=250)
-    syms = list(dict.fromkeys(r["symbol"] for r in uni if r["symbol"].isalpha()))[:120]
+    # Sort by market cap DESC before truncating. The screener returns rows in an
+    # arbitrary, run-to-run-unstable order, so a bare [:120] silently dropped
+    # valid liquid names (HOOD flickered in/out of the universe between runs —
+    # the actual reason it never scored). Deterministic ordering keeps the 120
+    # largest (hence most option-liquid) names every run.
+    uni_sorted = sorted((r for r in uni if r["symbol"].isalpha()),
+                        key=lambda r: r.get("marketCap") or 0, reverse=True)
+    syms = list(dict.fromkeys(r["symbol"] for r in uni_sorted))[:120]
     src = "screener"
 except urllib.error.HTTPError:
     syms = list(FALLBACK_UNIVERSE)
@@ -320,13 +348,13 @@ with open(os.path.join(os.path.dirname(__file__), "scan_history.jsonl"), "a") as
 
 # ---- display ----
 if sp is not None:
-    table("PUT candidates  — WEAKNESS  (flags: D=death-cross  B=support-break  !=oversold)", sp, False)
+    table("PUT candidates  — WEAKNESS  (flags: D=death-cross  d=below-both-MAs(cross-lags)  B=support-break  !=oversold)", sp, False)
     vetoed_p = [t[0]["sym"] for t in sp if t[3]][:10]
     if vetoed_p:
         print(f"  Oversold (RSI<30) vetoed from put list: {', '.join(vetoed_p)}\n")
     tickets("PUT TICKETS (live-tradeable)", sp)
 if sc is not None:
-    table("CALL candidates — STRENGTH  (flags: G=golden-cross  U=20d-breakout  !=overbought)", sc, True)
+    table("CALL candidates — STRENGTH  (flags: G=golden-cross  g=above-both-MAs(cross-lags)  U=20d-breakout  !=overbought)", sc, True)
     vetoed = [t[0]["sym"] for t in sc if t[3]][:8]
     if vetoed:
         print(f"  Overbought (RSI>80) vetoed from call list: {', '.join(vetoed)}\n")
