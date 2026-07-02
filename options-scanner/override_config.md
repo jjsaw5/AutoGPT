@@ -8,8 +8,10 @@ Updated: 2026-06-26 ~10:0x ET. Account: Agentic ••2861 (992952861), cash, op
   Separate CALL_SLEEVE_CAP = $400. Rationale: bullish calls diversify the all-bearish put book.
 
 ## SIZING / CAPS  (user instruction)
-- RISK_PER_TRADE = $350 (max loss on a single option = debit paid). UNCHANGED —
-  this is what blocks big single tickets (CGNX ~$585, MRNA ~$865), not the sleeve.
+- RISK_PER_TRADE = $500 (max loss on a single option = debit paid). RAISED from
+  $350, user override 2026-07-02, to unblock the qualifying CVS $105 call (~$453 —
+  passed every other gate). Risk stated: one position can now lose up to ~$500,
+  roughly 60% of the ~$840 account — a large single-bet ceiling at this size.
 - PUT_SLEEVE_CAP  = $400   (separate)
 - CALL_SLEEVE_CAP = $600   (RAISED from $400, user override 2026-07-01: "don't
   want to be restricted on good plays; I can add more." Risk stated: $600 calls +

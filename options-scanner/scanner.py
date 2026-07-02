@@ -19,7 +19,7 @@ Usage: python3 scanner.py [put|call|both]   (default: both)
 import os, sys, json, math, datetime, urllib.request, urllib.parse, concurrent.futures as cf
 
 DTE_MID = 45          # midpoint of the 30-60 DTE window, used for premium estimate
-TICKET_MAX = 350      # ~ RISK_PER_TRADE; a ticket is "affordable" at/under this
+TICKET_MAX = 500      # ~ RISK_PER_TRADE (raised 350->500, user override 2026-07-02)
 
 KEY = os.environ["FMP_API_KEY"]
 BASE = "https://financialmodelingprep.com/stable"

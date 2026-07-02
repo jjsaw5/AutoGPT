@@ -56,7 +56,7 @@
 - Open puts: 3 / 5 (MAX_OPEN). Open calls: 1.
 - PUT sleeve used: NIO $48 + JD $178 + PFE $99 = $325 / $400  ->  ROOM = ~$75.
 - CALL sleeve used: KDP $170 / $600  ->  ROOM = ~$430. (Cap raised $400->$600 by user 7/1;
-  calls LIVE-tradeable. RISK_PER_TRADE stays $350 per single ticket.)
+  calls LIVE-tradeable. RISK_PER_TRADE raised $350->$500 by user 7/2.)
 - CONCENTRATION (max 2 same-direction per sector / non-US country):
   * CHINA bearish: NIO + JD = 2/2 AT CAP (grandfathered) — NO new China puts until one closes.
   * Healthcare bearish: PFE = 1/2. Consumer Defensive bullish: KDP = 1/2.
