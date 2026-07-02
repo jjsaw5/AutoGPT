@@ -1,0 +1,87 @@
+"""End-to-end offline scan: pre-populated candidates through the full pipeline,
+with no network access. Verifies the orchestrator wires stages together and the
+readout / logging produce sane output."""
+
+from __future__ import annotations
+
+import json
+
+from options_scanner.models import Decision, EvaluatedCandidate
+from options_scanner.pipeline import (
+    build_thesis,
+    evaluate_gates,
+    rank_and_decide,
+    render_readout,
+    score_candidate,
+    select_structure,
+    append_scan,
+)
+
+from .conftest import make_candidate
+
+
+def _evaluate(candidate, config, context=None):
+    thesis = build_thesis(candidate, config)
+    structure = select_structure(candidate, thesis, config)
+    gates = evaluate_gates(candidate, thesis, structure, config, context=context)
+    score = score_candidate(candidate, thesis, structure, config)
+    return EvaluatedCandidate(
+        candidate=candidate, thesis=thesis, structure=structure,
+        score=score, gates=gates,
+    )
+
+
+def test_full_pipeline_offline(config):
+    candidates = [
+        make_candidate("AAPL"),
+        make_candidate("NVDA", price=120.0, signals={"iv_rank": 75.0, "iv": 0.6, "rv": 0.4}),
+        make_candidate("SPY", price=500.0, signals={
+            "net_prem": {"net_call_premium": 100, "net_put_premium": 100,
+                         "net_call_volume": 0, "net_put_volume": 0},
+        }),
+    ]
+    evaluated = [_evaluate(c, config) for c in candidates]
+    ranked = rank_and_decide(evaluated, config)
+
+    # Ranking orders GO before WATCH before PASS.
+    order = [_decision_rank(ec.decision) for ec in ranked]
+    assert order == sorted(order)
+
+    readout = render_readout(ranked, config)
+    assert "OPTIONS OPPORTUNITY SCANNER" in readout
+    assert "PORTFOLIO SUMMARY" in readout
+    assert "SPECULATIVE" in readout
+
+
+def test_go_requires_all_three(config):
+    # Force a strong bullish cheap-vol candidate; if it GOes, gates+EV+score all held.
+    ec = _evaluate(make_candidate("AAPL", signals={"iv_rank": 10.0}), config)
+    rank_and_decide([ec], config)
+    if ec.decision == Decision.GO:
+        assert ec.gates.passed
+        assert ec.score.expected_value > 0
+        assert ec.score.composite >= config.go_threshold
+        assert ec.suggested_size > 0
+
+
+def test_sizing_respects_ceiling(config):
+    ec = _evaluate(make_candidate("AAPL", signals={"iv_rank": 5.0}), config)
+    rank_and_decide([ec], config)
+    high = config.account["risk_high_conviction_max"]
+    assert ec.suggested_size <= high + ec.structure.max_loss  # within a contract of ceiling
+
+
+def test_logging_writes_jsonl(config, tmp_path):
+    ec = _evaluate(make_candidate("AAPL"), config)
+    rank_and_decide([ec], config)
+    log_file = tmp_path / "scan.jsonl"
+    n = append_scan([ec], scan_id="scan_test", timestamp="2026-07-02T00:00:00Z", log_path=log_file)
+    assert n == 1
+    row = json.loads(log_file.read_text().strip())
+    assert row["ticker"] == "AAPL"
+    assert row["scan_id"] == "scan_test"
+    assert "composite" in row and "gate_flags" in row
+
+
+def _decision_rank(decision: Decision) -> int:
+    return {Decision.GO: 0, Decision.WATCH: 1, Decision.PASS: 2}[decision]

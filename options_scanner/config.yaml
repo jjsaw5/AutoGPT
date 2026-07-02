@@ -1,0 +1,89 @@
+# Options Opportunity Scanner — configuration (Build Spec v0.2, §10)
+# Recommend-only decision support. A human confirms every order.
+# Secrets are NOT stored here — see .env.example.
+
+account:
+  size: 5000
+  risk_standard_max: 200          # G6 standard per-trade risk ($, 2-4% of account)
+  risk_high_conviction_max: 500   # G6 ceiling, top-decile composite only
+  max_open_risk: 2000             # G7 aggregate open risk cap ($, 40%)
+  max_positions: 6                # G7 concurrent position cap
+
+budget:
+  zerodte_per_week: 3             # G5 — self-imposed discipline (PDT cap eliminated 6/4/2026)
+
+universe:
+  mode: two_tier                  # Option B
+  cap_tiers: [MEGA, LARGE, MID, SMALL]   # MICRO manual override only
+  tier_a_liquidity_floor_oi: 500
+  tier_b_feeds:
+    - flow_alerts
+    - hottest_chains
+    - movers
+    - oi_change
+    - vol_anomaly
+    - congress_insider
+    - upcoming_catalysts
+  spread_max_pct: 0.10            # G2; 0.05 for 0DTE / short-dated
+  # Curated Tier A core watch. Optionable, liquid, spread-tight names across cap tiers.
+  tier_a:
+    - AAPL
+    - MSFT
+    - NVDA
+    - AMZN
+    - META
+    - GOOGL
+    - TSLA
+    - AMD
+    - SPY
+    - QQQ
+    - NFLX
+    - JPM
+    - XOM
+    - BAC
+    - INTC
+
+gates:
+  oi_min: 500                     # G1 open interest floor
+  contract_vol_min: 100           # G1 contract volume floor
+  spread_max_pct: 0.10            # G2
+  spread_max_pct_0dte: 0.05       # G2 short-dated
+  underlying_dollar_vol_floor:    # G3 avg daily $ volume floor by cap tier
+    MEGA: 500000000
+    LARGE: 200000000
+    MID: 50000000
+    SMALL: 10000000
+    MICRO: 0                      # manual override only
+  assignment_dte_flag: 2          # G9 short leg ITM within N days of expiry
+  intraday_margin_safe_harbor: 250  # G10 (~lesser of 5% equity / $1,000)
+
+scoring:
+  weights: {P1: 25, P2: 22, P3: 20, P4: 18, P5: 10, P6: 5}
+  go_threshold: 72
+  watch_threshold: 58
+
+structure:
+  ivr_cheap_max: 30               # IV rank <= this => "cheap" (buy premium)
+  ivr_rich_min: 50                # IV rank >= this => "rich" (sell premium)
+  leaps_delta_target: [0.70, 0.80]  # deep-ITM stock replacement
+
+speculative_bucket:
+  separated: true
+  quality_bar_min_composite: 75   # higher bar; surface only strong spec setups
+  counts_against_core_risk: false
+  human_approve_each: true
+
+cadence:
+  premarket_scan: true
+  intraday_interval_min: 30
+  eod_scan: true
+
+execution:
+  mode: recommend_only            # human confirms every order
+
+data:
+  unusual_whales_tier: base_api   # polling; no websocket/kafka/historical tape
+  fmp_base_url: https://financialmodelingprep.com
+  uw_base_url: https://api.unusualwhales.com
+  cache_ttl_seconds: 300          # per-ticker per-scan cache; never duplicate calls
+  request_timeout_seconds: 20
