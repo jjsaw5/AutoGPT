@@ -48,6 +48,9 @@ stocks (scan-only). Default answer is NO TRADE.
    50% of its sleeve (puts: $200 of $400 | calls: $300 of $600); open positions
    grandfathered but count. With-trend side keeps the full cap.
    (UPTREND -> puts are counter-trend.)
+   The banner also prints the UW MARKET-TIDE OVERLAY (fast options-flow read):
+   DIVERGENT (today's tape fights the structural regime) -> new with-trend
+   entries are marginal for the day; hold counter-trend to zero. Soft overlay.
    Each run auto-appends a dated snapshot to scan_history.jsonl (backtest data).
 5. Earnings — `earnings_exit.py` on affordable candidates -> CLEAN/TIME-STOP/BLOCK.
 6. Live gates on survivors' chosen (liquid monthly) expiry: delta band, OI>=500,

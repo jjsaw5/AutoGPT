@@ -17,6 +17,10 @@ direction), OI>=500, spread<=10% of mid, IV-rank<=70, safety wrapper.
 Usage: python3 scanner.py [put|call|both]   (default: both)
 """
 import os, sys, json, math, datetime, urllib.request, urllib.parse, concurrent.futures as cf
+try:
+    import uw                       # UW market-tide overlay (optional; degrades gracefully)
+except Exception:
+    uw = None
 
 DTE_MID = 45          # midpoint of the 30-60 DTE window, used for premium estimate
 TICKET_MAX = 500      # ~ RISK_PER_TRADE (raised 350->500, user override 2026-07-02)
@@ -276,6 +280,13 @@ elif REGIME == "DOWNTREND":
 else:
     print("  REGIME GATE: MIXED — both sleeves at full cap.\n")
 
+# UW market-tide overlay: fast options-flow read on top of the slow structural
+# regime. One market-wide call per run (not per-name). Divergence (structure vs
+# today's tape) = caution for new entries. Degrades gracefully if UW is down/unset.
+TIDE_OV = uw.regime_overlay(REGIME) if uw else None
+if TIDE_OV:
+    print("  " + uw.fmt_tide(REGIME).replace("\n", "\n  ") + "\n")
+
 rows = []
 with cf.ThreadPoolExecutor(max_workers=8) as ex:
     for m in ex.map(metrics, syms):
@@ -331,6 +342,10 @@ if DIRECTION in ("call", "both"):
 out["regime"] = {"state": REGIME, "spy": round(spy_p, 2),
                  "spy_50dma": round(spy_s50, 2), "spy_200dma": round(spy_s200, 2),
                  "spy_r63": round(spy_r63, 1)}
+if TIDE_OV and TIDE_OV.get("tide"):
+    _t = TIDE_OV["tide"]
+    out["regime"]["tide"] = {"bias": _t["bias"], "net_musd": round(_t["tide"] / 1e6),
+                             "trend": _t["trend"], "diverge": TIDE_OV["diverge"]}
 
 with open(os.path.join(os.path.dirname(__file__), "ranked_dir.json"), "w") as f:
     json.dump(out, f)

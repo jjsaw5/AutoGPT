@@ -124,9 +124,24 @@ bullish; KDP call flow bearish) — a tell for the underwater book. Top technica
 calls MNST/CVS/BCS all FLOW-CONTRADICT (flow-bearish). HOOD = only bullish-flow
 call (+$25.2M) but IV-rank 90 = IV-HOT (spread, not naked). COP = cleanest put
 (IV-rank 36 + confirming bearish flow).
-PHASE 2 (roadmap, not built): GEX/spot-exposures (dealer gamma -> strike select
-+ support levels), market-tide (augment the SPY regime gate with options-market
-sentiment), flow-alerts (filtered unusual prints as color). Pick before build.
+PHASE 2a — MARKET-TIDE REGIME OVERLAY (BUILT 2026-07-02):
+uw.market_tide()/regime_overlay() -> `python3 uw.py --tide [STRUCTURAL]`, and
+auto-printed in the scanner regime banner (one market-wide call per run, not
+per-name; degrades to structural-only if UW down/unset). The slow structural
+regime (SPY vs 50/200-DMA) is the backbone; the tide is a FAST options-flow read
+(whole-market net call - net put premium, today, with intraday momentum) layered
+on top. SOFT overlay:
+  ALIGNED   (structure & tide agree)      -> sleeve as normal.
+  DIVERGENT (tide fights the structure)   -> NEW with-trend entries = marginal
+            (wrapper won't bless marginal); hold counter-trend to zero for today.
+  NEUTRAL tide -> no adjustment.
+Example (2026-07-02): structure UPTREND but tide BEARISH -$970M (deteriorated
+from +$24M at the open) = DIVERGENT -> new calls marginal today. Explained why
+MNST/CVS/BCS all showed bearish single-name flow (whole tape was risk-off).
+PHASE 2b (roadmap, not built): flow persistence (multi-day opening-trade
+accumulation — extend the 1-day flow snapshot to our multi-week hold), insider
+transactions (exec buying = multi-week bullish catalyst). GEX de-prioritized:
+intraday tool, poor fit for 30-60 DTE swing holds.
 
 ## FUNDING PLAN
 Target deposit ~$2,000 (not yet funded). Until then operate on ~$400 initial;

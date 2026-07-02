@@ -119,6 +119,62 @@ def confirm(ticker, direction, dte=45):
             "iv_rank_ok": iv_rank_ok}
 
 
+def market_tide():
+    """Whole-market options-flow sentiment TODAY (5-min net call/put premium).
+    A FAST, forward-looking companion to the slow SPY-vs-MAs structural regime.
+    Returns the latest cumulative read + intraday momentum, or None."""
+    try:
+        rows = get("/api/market/market-tide")["data"]
+    except Exception:
+        return None
+    if not rows:
+        return None
+
+    def tide(b):                      # net directional premium: calls bought - puts bought
+        return (_f(b.get("net_call_premium")) or 0) - (_f(b.get("net_put_premium")) or 0)
+
+    now, openv = tide(rows[-1]), tide(rows[0])
+    NEUTRAL = 50e6                     # market-wide $; below this = no clear lean
+    bias = "bullish" if now > NEUTRAL else ("bearish" if now < -NEUTRAL else "neutral")
+    return {"tide": round(now), "open_tide": round(openv), "momentum": round(now - openv),
+            "net_volume": _f(rows[-1].get("net_volume")), "bias": bias,
+            "trend": "improving" if now - openv > 0 else "deteriorating",
+            "asof": rows[-1].get("timestamp")}
+
+
+def regime_overlay(structural):
+    """Combine the slow structural regime (SPY vs 50/200-DMA, from scanner.py)
+    with today's fast market tide. SOFT overlay — informs sizing, never the sole
+    gate. structural in {UPTREND, DOWNTREND, MIXED}. Returns dict incl. a note."""
+    t = market_tide()
+    if not t:
+        return {"tide": None, "aligned": None, "diverge": None,
+                "note": "tide n/a (set UW_API_KEY) — structural regime only"}
+    aligned = ((structural == "UPTREND" and t["bias"] == "bullish") or
+               (structural == "DOWNTREND" and t["bias"] == "bearish"))
+    diverge = ((structural == "UPTREND" and t["bias"] == "bearish") or
+               (structural == "DOWNTREND" and t["bias"] == "bullish"))
+    if aligned:
+        note = "ALIGNED — structure and today's flow agree; sleeve as normal."
+    elif diverge:
+        note = ("DIVERGENT — today's tape fights the structural trend. Treat NEW "
+                "with-trend entries as marginal; hold counter-trend to zero today.")
+    else:
+        note = "NEUTRAL tide — no overlay adjustment."
+    return {"tide": t, "aligned": aligned, "diverge": diverge, "note": note}
+
+
+def fmt_tide(structural=None):
+    ov = regime_overlay(structural) if structural else {"tide": market_tide(), "note": ""}
+    t = ov["tide"]
+    if not t:
+        return "MARKET TIDE: n/a (set UW_API_KEY)"
+    line = (f"MARKET TIDE {t['bias'].upper()}  (net ${t['tide']/1e6:+.0f}M, "
+            f"{t['trend']} from ${t['open_tide']/1e6:+.0f}M open, "
+            f"net_vol {t['net_volume']/1e3:+.0f}k)  as of {t['asof'][11:16]}")
+    return line + (f"\n  OVERLAY: {ov['note']}" if ov.get("note") else "")
+
+
 def _fmt(c):
     iv, fl = c["iv"], c["flow"]
     ivs = (f"IVr {iv['iv_rank']:>3}%  IV {iv['iv_pct']:>4}%  impl±{iv['implied_move_pct']:>4}%"
@@ -138,7 +194,10 @@ def _fmt(c):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("usage: python3 uw.py TICKER [put|call]"); sys.exit(1)
+        print("usage: python3 uw.py TICKER [put|call]  |  python3 uw.py --tide [UPTREND|DOWNTREND|MIXED]")
+        sys.exit(1)
+    if sys.argv[1] in ("--tide", "-t", "tide"):
+        print(fmt_tide(sys.argv[2].upper() if len(sys.argv) > 2 else None)); sys.exit(0)
     t = sys.argv[1].upper()
     dirs = [sys.argv[2].lower()] if len(sys.argv) > 2 else ["put", "call"]
     for d in dirs:
