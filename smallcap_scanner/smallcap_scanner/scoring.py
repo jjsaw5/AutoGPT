@@ -191,7 +191,11 @@ def risk_flags(
 
     if stock.price < 1.0:
         flags.append("SUB_$1 (delisting/illiquid-options risk)")
-    if stock.avg_volume < t.avg_volume_min:
+    # Prefer the true trailing average when history was fetched — for stage-3
+    # names the avg_volume fallback is just today's cumulative volume, which
+    # intraday (e.g. 20 minutes after the open) is a fraction of a real day
+    # and was mis-flagging liquid names as thin.
+    if (stock.avg_volume_30d or stock.avg_volume) < t.avg_volume_min:
         flags.append("THIN_VOLUME")
     if stock.change_pct is not None and stock.change_pct > 25:
         flags.append("ALREADY_PARABOLIC_TODAY (chasing risk)")
