@@ -24,9 +24,20 @@ and unrelated to the rest of the AutoGPT repository it lives in.
 
 Data layer: **FMP** (backbone: profile / quote / earnings), **Unusual Whales**
 (edge: flow, dark pool, net premium, IV rank, term structure, realized vol,
-GEX, max pain, market-wide idea feeds), **Robinhood** (live chain, greeks,
-buying power, and human-gated execution — accessed via the Robinhood MCP tools,
-not this package).
+GEX, max pain, market-wide idea feeds, **per-contract chain + greeks**),
+**Robinhood** (live-quote confirmation, buying power, and human-gated execution
+— accessed via the Robinhood MCP tools, not this package).
+
+**Live chain (real strikes, not placeholders).** When UW is wired, each
+candidate's structure is built against the actual option chain
+(`option-contracts` for per-strike OI / volume / NBBO / IV, `greeks` for
+per-strike delta) at the expiry nearest its horizon. This makes structure
+selection use real strikes and premiums, and makes gates **G1** (contract
+liquidity), **G2** (spread width) and **G9** (short-leg assignment) plus **POP**
+evaluate on real contracts instead of proxies/placeholders. If the chain can't
+be built (offline / gated / missing data), the scanner falls back to nominal
+placeholders and those gates defer to live confirmation. Robinhood still
+confirms live quotes at execution time.
 
 ## Install
 
@@ -135,9 +146,11 @@ options_scanner/
     pipeline/
       universe.py          # §3 two-tier universe + enrichment
       thesis.py            # §4 thesis construction
+      chain.py             # live UW option chain (OCC parse, contracts+greeks)
       gates.py             # §5 hard gates G1–G10
       scoring.py           # §6 six-pillar composite
-      structure.py         # §7 structure selection
+      structure.py         # §7 structure decision + placeholder realization
+      structure_chain.py   # §7 realize structures from the live chain
       rank.py              # §6b decisions + tiered sizing
       readout.py           # §8 three-section readout
       logbook.py           # §9 candidate logging

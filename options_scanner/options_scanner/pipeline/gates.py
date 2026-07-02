@@ -101,8 +101,9 @@ def _g1_contract_liquidity(candidate, structure, g, ctx) -> GateResult:
     oi_min = float(g.get("oi_min", 500)) * scale
     vol_min = float(g.get("contract_vol_min", 100)) * scale
 
-    oi = ctx.get("contract_oi")
-    vol = ctx.get("contract_vol")
+    # Prefer the structure's real per-leg metrics from the live chain.
+    oi = structure.contract_oi if structure.contract_oi is not None else ctx.get("contract_oi")
+    vol = structure.contract_volume if structure.contract_volume is not None else ctx.get("contract_vol")
     if oi is None or vol is None:
         p_oi, p_vol = _proxy_liquidity(candidate)
         oi = oi if oi is not None else p_oi
@@ -110,8 +111,9 @@ def _g1_contract_liquidity(candidate, structure, g, ctx) -> GateResult:
     if oi is None and vol is None:
         return GateResult("G1", True, "deferred: confirm OI/vol on live chain")
     ok = (oi or 0) >= oi_min and (vol or 0) >= vol_min
+    src = "chain" if structure.from_chain else "proxy"
     return GateResult(
-        "G1", ok, f"OI={oi} vol={vol} vs min OI={oi_min:g}/vol={vol_min:g}"
+        "G1", ok, f"OI={oi} vol={vol} vs min OI={oi_min:g}/vol={vol_min:g} ({src})"
     )
 
 
@@ -121,11 +123,13 @@ def _g2_spread(thesis, structure, g, ctx) -> GateResult:
         g.get("spread_max_pct_0dte", 0.05) if is_short_dated
         else g.get("spread_max_pct", 0.10)
     )
-    spread = ctx.get("spread_pct")
+    # Real per-leg spread from the chain wins; otherwise defer to live confirm.
+    spread = structure.spread_pct if structure.spread_pct is not None else ctx.get("spread_pct")
     if spread is None:
         return GateResult("G2", True, f"deferred: confirm spread ≤ {max_pct:.0%} on live chain")
     ok = spread <= max_pct
-    return GateResult("G2", ok, f"spread={spread:.1%} vs max {max_pct:.0%}")
+    src = "chain" if structure.from_chain else "ctx"
+    return GateResult("G2", ok, f"spread={spread:.1%} vs max {max_pct:.0%} ({src})")
 
 
 def _g3_underlying_liquidity(candidate, g, ctx) -> GateResult:
@@ -210,10 +214,32 @@ def _g8_data_freshness(candidate, ctx) -> GateResult:
 def _g9_assignment_risk(candidate, structure, g, ctx) -> GateResult:
     if ctx.get("short_leg_itm"):
         return GateResult("G9", False, "short leg ITM near expiry — close-only")
-    has_short = any(leg.action == "sell" for leg in structure.legs)
-    if not has_short:
+    short_legs = [leg for leg in structure.legs if leg.action == "sell"]
+    if not short_legs:
         return GateResult("G9", True, "no short leg")
+
+    # Real evaluation when the structure came from the live chain.
+    spot = candidate.price or candidate.signals.get("price")
+    if structure.from_chain and spot and structure.expiry:
+        dte = _dte(structure.expiry)
+        near_expiry = dte is not None and dte <= int(g.get("assignment_dte_flag", 2))
+        for leg in short_legs:
+            itm = (leg.option_type == "call" and spot > leg.strike) or (
+                leg.option_type == "put" and spot < leg.strike
+            )
+            if itm and near_expiry:
+                return GateResult("G9", False, f"short {leg.option_type} ITM, {dte}d to expiry — close-only")
+        return GateResult("G9", True, "short leg OTM / not near expiry")
     return GateResult("G9", True, "deferred: confirm short-leg moneyness on live chain")
+
+
+def _dte(expiry_iso: str) -> int | None:
+    from datetime import datetime, timezone
+    try:
+        exp = datetime.strptime(expiry_iso[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+    return (exp - datetime.now(timezone.utc).date()).days
 
 
 def _g10_intraday_margin(structure, g, ctx) -> GateResult:

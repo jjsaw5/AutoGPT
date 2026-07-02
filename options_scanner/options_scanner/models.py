@@ -206,6 +206,14 @@ class Structure:
     rationale: str = ""
     is_defined_risk: bool = True
     is_speculative: bool = False
+    # Real chain-derived metrics (populated when built from a live OptionChain;
+    # None => nominal placeholder, evaluated/deferred by the gates accordingly).
+    contract_oi: int | None = None       # min OI across legs
+    contract_volume: int | None = None   # min volume across legs
+    spread_pct: float | None = None      # max bid/ask spread % across legs
+    short_delta: float | None = None     # |delta| of the short (or long) leg
+    expiry: str | None = None            # chosen expiry (ISO)
+    from_chain: bool = False             # True when strikes/prices are real
 
     def legs_str(self) -> str:
         return " ".join(str(leg) for leg in self.legs) if self.legs else "—"

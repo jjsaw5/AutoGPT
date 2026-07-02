@@ -10,6 +10,7 @@ is elevated).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import partial
 
 from ..config import Config
@@ -36,100 +37,116 @@ _LONG_TARGET_RR = 1.3
 _LEAPS_TARGET_RR = 1.5  # longer horizon / deep-ITM => a touch more room to run
 
 
-def select_structure(
-    candidate: Candidate, thesis: Thesis, config: Config
-) -> Structure:
-    price = candidate.price or candidate.signals.get("price") or 0.0
-    cfg = config.structure
-    ivr_rich = float(cfg.get("ivr_rich_min", 50))
+@dataclass
+class Plan:
+    """Intended structure (regime-first decision), independent of realization."""
+
+    kind: str            # long | leaps | debit_vertical | credit_vertical | iron_condor | zerodte
+    call: bool = True
+    credit: bool = False
+    width_pct: float = 0.05
+    rationale: str = ""
+
+
+def plan_structure(thesis: Thesis, config: Config) -> Plan:
+    """Decide the intended structure from the thesis (spec §7). Pure — no prices.
+
+    Realized either against a live chain (real strikes) or via placeholders.
+    """
+    ivr_rich = float(config.structure.get("ivr_rich_min", 50))
     call = thesis.direction != Direction.BEARISH  # bullish/neutral default calls
-
-    # Inject the per-trade risk ceiling so spread/condor widths fit the account.
-    ceiling = float(config.account.get("risk_high_conviction_max", 500))
-    spread = partial(_defined_risk_spread, price, risk_ceiling=ceiling)
-    condor = partial(_iron_condor, price, risk_ceiling=ceiling)
-
-    # --- 0DTE: only when explicitly intraday, top-liquidity, strong flow -------
-    if thesis.horizon == Horizon.INTRADAY:
-        return spread(
-            call=call, credit=(thesis.vol_regime == VolRegime.RICH),
-            structure_type=StructureType.ZERO_DTE_SPREAD,
-            width_pct=0.02,
-            rationale="0DTE defined-risk (top-liquidity, weekly cap applies)",
-        )
-
     regime = thesis.vol_regime
     conviction = thesis.conviction
     ivr = thesis.iv_rank or 0.0
 
-    # --- Earnings event overrides ---------------------------------------------
-    if thesis.is_earnings_play and thesis.days_to_catalyst is not None:
-        if thesis.expected_move and thesis.implied_move:
-            if thesis.expected_move > thesis.implied_move:
-                return spread(
-                    call=call, credit=False,
-                    structure_type=StructureType.DEBIT_VERTICAL,
-                    rationale="earnings: expected move > implied — debit spread",
-                )
-            return spread(
-                call=call, credit=True,
-                structure_type=StructureType.CREDIT_VERTICAL,
-                rationale="earnings: harvest IV crush — credit spread",
-            )
+    # 0DTE: only when explicitly intraday.
+    if thesis.horizon == Horizon.INTRADAY:
+        return Plan("zerodte", call, credit=(regime == VolRegime.RICH), width_pct=0.02,
+                    rationale="0DTE defined-risk (top-liquidity, weekly cap applies)")
 
-    # --- Cheap vol => buy premium ---------------------------------------------
+    # Earnings overrides.
+    if thesis.is_earnings_play and thesis.days_to_catalyst is not None \
+            and thesis.expected_move and thesis.implied_move:
+        if thesis.expected_move > thesis.implied_move:
+            return Plan("debit_vertical", call, credit=False,
+                        rationale="earnings: expected move > implied — debit spread")
+        return Plan("credit_vertical", call, credit=True,
+                    rationale="earnings: harvest IV crush — credit spread")
+
+    # Cheap vol => buy premium.
     if regime == VolRegime.CHEAP:
         if thesis.direction == Direction.NEUTRAL:
-            return condor(rationale="neutral, cheap vol fallback to condor")
+            return Plan("iron_condor", rationale="neutral, cheap vol fallback to condor")
         if thesis.horizon == Horizon.LEAPS:
-            return _leaps(price, call=call)
+            return Plan("leaps", call, rationale="cheap vol, LEAPS deep-ITM stock replacement (~0.75Δ)")
         if conviction >= _STRONG and thesis.horizon == Horizon.SWING:
-            # Prefer spreads over naked long premium when IV rank is elevated.
             if ivr >= ivr_rich:
-                return spread(
-                    call=call, credit=False,
-                    structure_type=StructureType.DEBIT_VERTICAL,
-                    rationale="strong swing but elevated IVR — debit spread over naked long",
-                )
-            # Prefer a naked long only when it fits the per-trade risk ceiling;
-            # otherwise fall back to a debit vertical sized to the cap.
-            long = _long_option(price, call=call)
-            if long.max_loss is not None and long.max_loss <= ceiling:
-                return long
-            return spread(
-                call=call, credit=False,
-                structure_type=StructureType.DEBIT_VERTICAL,
-                rationale="cheap vol, strong conviction, but naked long exceeds risk cap — debit spread",
-            )
+                return Plan("debit_vertical", call, credit=False,
+                            rationale="strong swing but elevated IVR — debit spread over naked long")
+            return Plan("long", call, rationale="cheap vol, strong conviction — long premium")
         if conviction >= _MODERATE:
-            return spread(
-                call=call, credit=False,
-                structure_type=StructureType.DEBIT_VERTICAL,
-                rationale="cheap vol, moderate conviction — debit vertical",
-            )
+            return Plan("debit_vertical", call, credit=False,
+                        rationale="cheap vol, moderate conviction — debit vertical")
 
-    # --- Rich vol => sell premium ---------------------------------------------
+    # Rich vol => sell premium.
     if regime == VolRegime.RICH:
         if thesis.direction == Direction.NEUTRAL:
-            return condor(rationale="rich vol, neutral — iron condor")
+            return Plan("iron_condor", rationale="rich vol, neutral — iron condor")
         if conviction >= _MODERATE:
-            return spread(
-                call=call, credit=True,
-                structure_type=StructureType.CREDIT_VERTICAL,
-                rationale="rich vol — sell premium via credit vertical",
-            )
+            return Plan("credit_vertical", call, credit=True,
+                        rationale="rich vol — sell premium via credit vertical")
 
-    # --- Fair vol / low conviction: default to a directional debit spread -----
+    # Fair vol / low conviction fallback.
     if thesis.direction == Direction.NEUTRAL:
-        return condor(rationale="neutral, fair vol — iron condor")
-    return spread(
-        call=call, credit=(regime == VolRegime.RICH),
-        structure_type=(
-            StructureType.CREDIT_VERTICAL if regime == VolRegime.RICH
-            else StructureType.DEBIT_VERTICAL
-        ),
+        return Plan("iron_condor", rationale="neutral, fair vol — iron condor")
+    return Plan(
+        "credit_vertical" if regime == VolRegime.RICH else "debit_vertical",
+        call, credit=(regime == VolRegime.RICH),
         rationale="fair vol — directional vertical",
     )
+
+
+def select_structure(
+    candidate: Candidate, thesis: Thesis, config: Config, chain=None
+) -> Structure:
+    """Choose a structure for the candidate. Uses the live ``chain`` for real
+    strikes/premiums when provided; otherwise nominal placeholders."""
+    plan = plan_structure(thesis, config)
+    ceiling = float(config.account.get("risk_high_conviction_max", 500))
+
+    if chain is not None:
+        from .structure_chain import realize_from_chain
+        realized = realize_from_chain(plan, chain, ceiling)
+        if realized is not None:
+            return realized
+
+    price = candidate.price or candidate.signals.get("price") or 0.0
+    return realize_placeholder(plan, price, ceiling)
+
+
+def realize_placeholder(plan: Plan, price: float, ceiling: float) -> Structure:
+    """Build a nominal structure from spot + width heuristics (no live chain)."""
+    spread = partial(_defined_risk_spread, price, risk_ceiling=ceiling)
+
+    if plan.kind == "zerodte":
+        return spread(call=plan.call, credit=plan.credit,
+                      structure_type=StructureType.ZERO_DTE_SPREAD,
+                      width_pct=plan.width_pct, rationale=plan.rationale)
+    if plan.kind == "leaps":
+        return _leaps(price, call=plan.call)
+    if plan.kind == "iron_condor":
+        return _iron_condor(price, risk_ceiling=ceiling, rationale=plan.rationale)
+    if plan.kind == "long":
+        long = _long_option(price, call=plan.call)
+        if long.max_loss is not None and long.max_loss <= ceiling:
+            return long
+        return spread(call=plan.call, credit=False,
+                      structure_type=StructureType.DEBIT_VERTICAL,
+                      rationale="cheap vol, strong conviction, but naked long exceeds risk cap — debit spread")
+    # debit_vertical / credit_vertical
+    st = StructureType.CREDIT_VERTICAL if plan.credit else StructureType.DEBIT_VERTICAL
+    return spread(call=plan.call, credit=plan.credit, structure_type=st,
+                  width_pct=plan.width_pct, rationale=plan.rationale)
 
 
 # --- builders -----------------------------------------------------------------

@@ -53,6 +53,8 @@ class UnusualWhalesClient:
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Accept": "application/json",
+            # Documented required header (unusualwhales.com/skill.md).
+            "UW-CLIENT-API-ID": "100001",
         }
         self._http = BaseHTTPClient(
             base_url, default_headers=headers, timeout=timeout, cache_ttl=cache_ttl
@@ -150,6 +152,34 @@ class UnusualWhalesClient:
         if not isinstance(rows, list) or not rows:
             return {}
         return rows[-1]
+
+    # --- per-contract chain (base tier; skill.md verified) --------------------
+    def option_contracts(
+        self, ticker: str, *, expiry: str | None = None, limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Per-strike contract data: OI, volume, nbbo_bid/ask, IV, last price.
+
+        Without ``expiry`` returns the ~500 most-active contracts (spanning
+        expiries); with ``expiry=YYYY-MM-DD`` returns the full strike ladder for
+        that expiry.
+        """
+        params: dict[str, Any] = {}
+        if expiry:
+            params["expiry"] = expiry
+        if limit:
+            params["limit"] = limit
+        rows = self._get_data(f"/api/stock/{ticker}/option-contracts", params or None)
+        return rows if isinstance(rows, list) else []
+
+    def greeks(self, ticker: str, *, expiry: str | None = None) -> list[dict[str, Any]]:
+        """Per-strike greeks (delta/gamma/theta/vega) for an expiry.
+
+        Without ``expiry`` returns the front expiry only; pass ``expiry`` to get
+        deltas at a swing/position/LEAPS expiry.
+        """
+        params = {"expiry": expiry} if expiry else None
+        rows = self._get_data(f"/api/stock/{ticker}/greeks", params)
+        return rows if isinstance(rows, list) else []
 
     # --- market-wide idea-generation feeds (may need Advanced tier) ------------
     def movers(self, **params: Any) -> list[dict[str, Any]]:

@@ -29,6 +29,7 @@ from .pipeline import (
     score_candidate,
     select_structure,
 )
+from .pipeline.chain import build_chain
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +114,16 @@ class Scanner:
         for candidate in candidates:
             enrich_candidate(candidate, self.fmp, self.uw, self.config)
             thesis = build_thesis(candidate, self.config)
-            structure = select_structure(candidate, thesis, self.config)
+            chain = None
+            if self.uw is not None:
+                try:
+                    chain = build_chain(
+                        self.uw, candidate.ticker, thesis.horizon.value,
+                        candidate.price, now=now,
+                    )
+                except Exception as exc:  # never let chain issues abort a scan
+                    logger.warning("chain build failed for %s: %s", candidate.ticker, exc)
+            structure = select_structure(candidate, thesis, self.config, chain=chain)
             gates = evaluate_gates(
                 candidate, thesis, structure, self.config, context=context
             )

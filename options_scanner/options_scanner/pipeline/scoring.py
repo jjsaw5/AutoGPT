@@ -118,13 +118,22 @@ def _p2_directional_signal(candidate: Candidate, thesis: Thesis) -> float:
 
 # --- P3 Expected Value --------------------------------------------------------
 def _estimate_pop(thesis: Thesis, structure: Structure) -> float:
-    """Probability of profit (0-1). Heuristic prior — see §9 calibration.
-
-    Credit structures: POP ≈ 1 − |Δ short strike|, approximated from the
-    regime/conviction when live deltas are absent. Debit/long: breakeven vs
-    implied move.
+    """Probability of profit (0-1). Uses the real short-leg delta from the live
+    chain when available (credit: POP ≈ 1 − |Δ short|; long/debit: ≈ |Δ| ITM
+    probability); otherwise falls back to a regime/conviction heuristic prior.
     """
     st = structure.structure_type
+
+    # Real delta-based POP when the structure was built from the chain.
+    if structure.short_delta is not None:
+        d = min(0.99, max(0.01, structure.short_delta))
+        if st in _SELL_PREMIUM:
+            return round(1.0 - d, 3)
+        if st in _BUY_PREMIUM:
+            return round(d, 3)
+        if st == StructureType.ZERO_DTE_SPREAD:
+            return round(1.0 - d if structure.max_loss and structure.max_profit
+                         and structure.max_loss > structure.max_profit else d, 3)
     if st in _SELL_PREMIUM:
         base = 0.62 + 0.10 * thesis.conviction
         if st == StructureType.IRON_CONDOR:
