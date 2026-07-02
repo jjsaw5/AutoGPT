@@ -211,21 +211,63 @@ def flow_persistence(ticker, direction, days=5, min_dte=14, min_prem=30000):
             "partA": partA, "partB": partB}
 
 
+def insider(ticker, window_days=90, buy_min=1_000_000):
+    """Recent insider BUYING as a multi-week bullish catalyst (Phase 2c). Open-
+    market purchases by execs are rare and meaningful; SELLING is noisy (10b5-1
+    plans, option exercises, diversification) so we do NOT emit it as bearish.
+    Window is anchored to the data's own latest filing date (clock-independent)."""
+    try:
+        rows = get(f"/api/stock/{ticker}/insider-buy-sells")["data"]
+    except Exception:
+        return None
+    if not rows:
+        return None
+    import datetime as _dt
+
+    def d(s):
+        try:
+            return _dt.date.fromisoformat(str(s)[:10])
+        except Exception:
+            return None
+    latest = d(rows[0].get("filing_date"))
+    if not latest:
+        return None
+    buy = sell = 0.0
+    nb = ns = 0
+    for r in rows:
+        fd = d(r.get("filing_date"))
+        if not fd or (latest - fd).days > window_days:
+            continue
+        buy += _f(r.get("purchases_notional")) or 0
+        sell += _f(r.get("sells_notional")) or 0
+        nb += r.get("purchases") or 0
+        ns += r.get("sells") or 0
+    return {"buy_notional": round(buy), "sell_notional": round(sell), "n_buys": nb,
+            "n_sells": ns, "bias": "buying" if buy >= buy_min else "neutral",
+            "window_days": window_days, "asof": rows[0].get("filing_date")}
+
+
 def confirm(ticker, direction, dte=45):
     """Compact live-gate verdict. flow_confirms/iv_rank_ok are booleans the
     safety wrapper can read; nothing here places or blocks on its own."""
     iv = iv_rank(ticker, dte)
     fl = flow(ticker)
     persist = flow_persistence(ticker, direction)
+    ins = insider(ticker)
     want = "bearish" if direction == "put" else "bullish"
     flow_confirms = bool(fl and fl["bias"] == want and not fl["mixed"])
     flow_contradicts = bool(fl and fl["bias"] != want and fl["bias"] != "neutral")
     iv_rank_ok = bool(iv and iv["iv_rank"] <= IV_RANK_MAX)
+    insider_buying = bool(ins and ins["bias"] == "buying")
     return {"ticker": ticker, "direction": direction, "iv": iv, "flow": fl,
-            "persist": persist,
+            "persist": persist, "insider": ins,
             "flow_confirms": flow_confirms, "flow_contradicts": flow_contradicts,
             "iv_rank_ok": iv_rank_ok, "accumulation": persist["verdict"] == "ACCUMULATION",
-            "distribution": persist["verdict"] == "CONTRA"}
+            "distribution": persist["verdict"] == "CONTRA",
+            # insider buying confirms a CALL thesis; for a PUT it's a caution
+            "insider_buying": insider_buying,
+            "insider_confirms": insider_buying and direction == "call",
+            "insider_caution": insider_buying and direction == "put"}
 
 
 def market_tide():
@@ -311,15 +353,38 @@ def _fmt(c):
         tags.append("ACCUMULATION")
     elif c.get("distribution"):
         tags.append("DISTRIBUTION")
-    return f"{c['ticker']:<6} {c['direction']:<4} | {ivs} | {fls}\n         {ps} | {'  '.join(tags)}"
+    if c.get("insider_confirms"):
+        tags.append("INSIDER-BUY")
+    elif c.get("insider_caution"):
+        tags.append("INSIDER-BUY(caution)")
+    ins = c.get("insider") or {}
+    inss = (f" | insider ${ (ins.get('buy_notional') or 0)/1e6:+.1f}M buy / "
+            f"${ (ins.get('sell_notional') or 0)/1e6:+.1f}M sell {ins.get('window_days','?')}d"
+            if ins else "")
+    return (f"{c['ticker']:<6} {c['direction']:<4} | {ivs} | {fls}\n"
+            f"         {ps}{inss}\n         {'  '.join(tags)}")
 
 
 if __name__ == "__main__":
+    USAGE = ("usage: python3 uw.py TICKER [put|call]\n"
+             "       python3 uw.py --tide [UPTREND|DOWNTREND|MIXED]\n"
+             "       python3 uw.py --book TICKER:put TICKER:call ...   (position/trim review)")
     if len(sys.argv) < 2:
-        print("usage: python3 uw.py TICKER [put|call]  |  python3 uw.py --tide [UPTREND|DOWNTREND|MIXED]")
-        sys.exit(1)
+        print(USAGE); sys.exit(1)
+    if not KEY:
+        print("UW_API_KEY not set in environment — add it as an environment secret "
+              "(same place as FMP_API_KEY). All UW reads are unavailable until then.")
+        sys.exit(2)
     if sys.argv[1] in ("--tide", "-t", "tide"):
         print(fmt_tide(sys.argv[2].upper() if len(sys.argv) > 2 else None)); sys.exit(0)
+    if sys.argv[1] in ("--book", "-b", "book"):
+        # Position/trim review: UW confirmation on each open position. A thesis
+        # the flow now CONTRADICTS (or an underlying DISTRIBUTION) is a trim flag.
+        print("=== UW POSITION REVIEW (does the thesis still hold up?) ===")
+        for pair in sys.argv[2:]:
+            tk, _, dr = pair.partition(":")
+            print(_fmt(confirm(tk.upper(), (dr or "call").lower())))
+        sys.exit(0)
     t = sys.argv[1].upper()
     dirs = [sys.argv[2].lower()] if len(sys.argv) > 2 else ["put", "call"]
     for d in dirs:

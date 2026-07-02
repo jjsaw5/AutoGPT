@@ -159,8 +159,31 @@ Live 2026-07-02 (surfaced multi-day divergences the snapshot hid): CVS call
 BUILDING (+$1.5M opening call prints over 5d, 8 new — bullish case stronger than
 today's bearish snapshot); PDD put CONTRA (+$3.3M bullish opening prints AGAINST
 the put -> avoid); NIO put CONTRA (+$0.5M bullish prints vs our open put).
-PHASE 2c (roadmap, not built): insider transactions (exec buying = multi-week
-bullish catalyst). GEX de-prioritized: intraday tool, poor fit for 30-60 DTE.
+PHASE 2c — INSIDER BUYING (BUILT 2026-07-02):
+uw.insider(ticker) via /api/stock/{ticker}/insider-buy-sells (the per-ticker
+endpoint; the documented /insider/transactions ignores its ticker filter).
+Sums purchases vs sells notional over a 90-day window anchored to the data's own
+latest filing date (clock-independent). Emits bias "buying" only when open-market
+purchases >= $1M — SELLING is deliberately NOT treated as bearish (10b5-1 plans,
+option exercises, diversification make it noisy). In confirm(): INSIDER-BUY
+confirms a CALL thesis (conviction booster); for a PUT it is a CAUTION (execs
+buying into our short). Never a hard gate. Live: HOOD +$55.3M buys (90d) ->
+INSIDER-BUY, reinforcing the bullish read (but IV-rank 90 = still spread-only).
+
+## POSITION / TRIM REVIEW (UW):  `python3 uw.py --book TICKER:put TICKER:call ...`
+Runs the full confirm() stack (IV-rank + today's flow + persistence + insider) on
+each OPEN position. A thesis the flow now CONTRADICTS, or an underlying flagged
+DISTRIBUTION, is a TRIM signal. Use in RUNBOOK step 2 (manage positions first).
+
+GEX still de-prioritized: intraday tool, poor fit for our 30-60 DTE swing holds.
+
+## UW KEY — ENV CONFIG (loose end)
+UW_API_KEY must be an ENVIRONMENT SECRET, injected the same way FMP_API_KEY is
+(it is present in `env` because it was configured as an env var/secret, NOT via
+setup.sh). Add UW_API_KEY in the Claude-Code-on-web environment settings
+(Environment variables / secrets). Never commit it. Until set, all UW reads
+degrade to "n/a (set UW_API_KEY)" and the scanner falls back to FMP-only —
+nothing hard-fails.
 
 ## FUNDING PLAN
 Target deposit ~$2,000 (not yet funded). Until then operate on ~$400 initial;

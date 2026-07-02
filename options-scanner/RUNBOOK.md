@@ -34,6 +34,10 @@ stocks (scan-only). Default answer is NO TRADE.
    entry (score, RSI, delta, IV, spread, OI, regime, sector) — the feedback loop.
 1. HOURS check — abort if market closed.
 2. MANAGE OPEN POSITIONS FIRST (see positions.md):
+   - UW POSITION REVIEW: `python3 uw.py --book <TKR:dir> ...` for all open
+     positions. FLOW-CONTRADICT / DISTRIBUTION on a name = TRIM flag (thesis no
+     longer supported by flow). INSIDER-BUY(caution) on a put = execs buying our
+     short. Weigh alongside the price-based exits below.
    - Verify each resting GTC take-profit is still working.
    - Check each PREMIUM STOP-LOSS: close any long option whose mark <= 50% of
      entry debit (monitored — per-position stop levels are in positions.md).
@@ -56,13 +60,15 @@ stocks (scan-only). Default answer is NO TRADE.
 6. Live gates on survivors' chosen (liquid monthly) expiry: delta band, OI>=500,
    spread<=10% of mid, IV-rank<=70. IV-rank is now a REAL number from `uw.py`
    (UW interpolated-iv) — no longer unverifiable; it is a HARD rail again.
-6b. UW CONFIRMATION (`uw.py TICKER put|call`): per survivor, three reads —
+6b. UW CONFIRMATION (`uw.py TICKER put|call`): per survivor, four reads —
    (i) real IV-rank (IV-HOT rank>70 = HARD fail); (ii) today's flow bias
    (FLOW-CONFIRM / FLOW-CONTRADICT); (iii) multi-day PERSISTENCE
    (ACCUMULATION / CONTRA=DISTRIBUTION / BUILDING / NEUTRAL — is smart money
-   building our direction over ~5 sessions, or is today a blip?). SOFT gate:
-   FLOW-CONTRADICT or CONTRA -> treat as marginal (wrapper won't bless marginal);
-   ACCUMULATION strengthens conviction. Only IV-HOT is a hard veto.
+   building our direction over ~5 sessions, or is today a blip?); (iv) INSIDER
+   buying (>=$1M open-market exec purchases in 90d = bullish catalyst; confirms
+   calls, cautions puts). SOFT gate: FLOW-CONTRADICT or CONTRA -> treat as
+   marginal (wrapper won't bless marginal); ACCUMULATION / INSIDER-BUY strengthen
+   conviction. Only IV-HOT (rank>70) is a hard veto.
 7. Safety wrapper (PUTS only): APPROVE iff all gates pass AND debit <= RISK_PER_TRADE
    AND open-put premium <= min(sleeve cap, live BP) AND conviction not marginal
    (a FLOW-CONTRADICT counts as marginal). Limit only, <= mid*1.02 (no chasing).
