@@ -283,31 +283,22 @@ def tickets(title, scored):
     print("  CONCENTRATION CAP: max 2 same-direction positions per sector / non-US country")
     print("  — check open positions in positions.md before adding.\n")
 
-out = {}
+# ---- compute + PERSIST FIRST, print after ----
+# (A truncated stdout pipe, e.g. `scanner.py | head`, kills the process on the
+# first blocked print — data writes must not sit behind the print sections.)
+out, sp, sc = {}, None, None
 if DIRECTION in ("put", "both"):
     sp = sorted(((m,) + score_put(m) for m in rows), key=lambda x: -x[1])
-    table("PUT candidates  — WEAKNESS  (flags: D=death-cross  B=support-break  !=oversold)", sp, False)
-    vetoed_p = [t[0]["sym"] for t in sp if t[3]][:10]
-    if vetoed_p:
-        print(f"  Oversold (RSI<30) vetoed from put list: {', '.join(vetoed_p)}\n")
-    tickets("PUT TICKETS (live-tradeable)", sp)
     out["puts"] = [{"sym": m["sym"], "score": round(s, 2), "est_ticket": m["est_ticket"],
                     "rsi": round(m["rsi"]) if m["rsi"] is not None else None,
                     "pct50": round(m["pct50"], 1), "rel": round(m["rel"], 1) if m["rel"] is not None else None}
                    for m, s, _, veto in sp if not veto]
 if DIRECTION in ("call", "both"):
     sc = sorted(((m,) + score_call(m) for m in rows), key=lambda x: -x[1])
-    # actionable = strong but NOT overbought-vetoed
-    actionable = [t for t in sc if not t[3]]
-    table("CALL candidates — STRENGTH  (flags: G=golden-cross  U=20d-breakout  !=overbought)", sc, True)
-    vetoed = [t[0]["sym"] for t in sc if t[3]][:8]
-    if vetoed:
-        print(f"  Overbought (RSI>80) vetoed from call list: {', '.join(vetoed)}\n")
-    tickets("CALL TICKETS (live-tradeable)", sc)   # calls enabled 2026-07-01 (user override)
     out["calls"] = [{"sym": m["sym"], "score": round(s, 2), "est_ticket": m["est_ticket"],
                      "rsi": round(m["rsi"]) if m["rsi"] is not None else None,
                      "pct50": round(m["pct50"], 1), "rel": round(m["rel"], 1) if m["rel"] is not None else None}
-                    for m, s, _, veto in actionable]
+                    for m, s, _, veto in sc if not veto]
 
 out["regime"] = {"state": REGIME, "spy": round(spy_p, 2),
                  "spy_50dma": round(spy_s50, 2), "spy_200dma": round(spy_s200, 2),
@@ -319,9 +310,25 @@ with open(os.path.join(os.path.dirname(__file__), "ranked_dir.json"), "w") as f:
 # Persist a dated snapshot (top 15/side) to the repo — the backtest/feedback
 # dataset. One JSON line per run; committed to git, unlike ranked_dir.json.
 # Stamp with the US-market date, not container UTC (evening runs would roll over).
+# Skip duplicate append if this exact date+regime+leaders already logged today? No —
+# multiple runs/day are intentional; dedupe at analysis time.
 _et = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=5)
 snap = {"date": str(_et.date()), "regime": out["regime"],
         "puts": out.get("puts", [])[:15], "calls": out.get("calls", [])[:15]}
 with open(os.path.join(os.path.dirname(__file__), "scan_history.jsonl"), "a") as f:
     f.write(json.dumps(snap) + "\n")
+
+# ---- display ----
+if sp is not None:
+    table("PUT candidates  — WEAKNESS  (flags: D=death-cross  B=support-break  !=oversold)", sp, False)
+    vetoed_p = [t[0]["sym"] for t in sp if t[3]][:10]
+    if vetoed_p:
+        print(f"  Oversold (RSI<30) vetoed from put list: {', '.join(vetoed_p)}\n")
+    tickets("PUT TICKETS (live-tradeable)", sp)
+if sc is not None:
+    table("CALL candidates — STRENGTH  (flags: G=golden-cross  U=20d-breakout  !=overbought)", sc, True)
+    vetoed = [t[0]["sym"] for t in sc if t[3]][:8]
+    if vetoed:
+        print(f"  Overbought (RSI>80) vetoed from call list: {', '.join(vetoed)}\n")
+    tickets("CALL TICKETS (live-tradeable)", sc)   # calls enabled 2026-07-01 (user override)
 print("Saved ranked_dir.json + appended scan_history.jsonl")
