@@ -14,6 +14,11 @@ stocks (scan-only). Default answer is NO TRADE.
 - `earnings_exit.py` — Pre-earnings TIME-STOP planner. `python3 earnings_exit.py [SYMS...]`.
                        Buy the liquid monthly, but auto-exit EXIT_LEAD days before
                        earnings. Verdicts: CLEAN / TIME-STOP / BLOCK.
+- `uw.py`            — Unusual Whales CONFIRMATION layer (Stage-2 only).
+                       `python3 uw.py TICKER [put|call]`. REAL IV-rank (UW
+                       interpolated-iv) + options-flow sentiment (net premium /
+                       bullish-vs-bearish). Confirms the shortlist; never drives
+                       Stage-1. Needs env var UW_API_KEY. See override_config.md.
 - `override_config.md`— Logged rails, overrides, sizing, exits. SOURCE OF TRUTH.
 - `positions.md`     — Open positions + their monitored exits. UPDATE on every fill.
 
@@ -46,10 +51,15 @@ stocks (scan-only). Default answer is NO TRADE.
    Each run auto-appends a dated snapshot to scan_history.jsonl (backtest data).
 5. Earnings — `earnings_exit.py` on affordable candidates -> CLEAN/TIME-STOP/BLOCK.
 6. Live gates on survivors' chosen (liquid monthly) expiry: delta band, OI>=500,
-   spread<=10% of mid, IV-rank<=70 (elevated+unverifiable IV = flag, don't bless).
+   spread<=10% of mid, IV-rank<=70. IV-rank is now a REAL number from `uw.py`
+   (UW interpolated-iv) — no longer unverifiable; it is a HARD rail again.
+6b. UW CONFIRMATION (`uw.py TICKER put|call`): pull real IV-rank + options-flow
+   bias on each survivor. FLOW-CONFIRM = smart money agrees; FLOW-CONTRADICT =
+   institutions on the other side -> SOFT gate: downgrade conviction (treat as
+   marginal), do not hard-veto yet. IV-HOT (rank>70) IS a hard fail.
 7. Safety wrapper (PUTS only): APPROVE iff all gates pass AND debit <= RISK_PER_TRADE
-   AND open-put premium <= min(sleeve cap, live BP) AND conviction not marginal.
-   Limit only, <= mid*1.02 (no chasing).
+   AND open-put premium <= min(sleeve cap, live BP) AND conviction not marginal
+   (a FLOW-CONTRADICT counts as marginal). Limit only, <= mid*1.02 (no chasing).
 8. If APPROVED: liquidate-to-fund if needed (NOTE: cash account — stock proceeds
    settle T+1 and are NOT spendable for options same day; deposit or wait) ->
    review_option_order -> place_option_order (buy_to_open) -> confirm REAL fill via

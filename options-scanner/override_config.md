@@ -99,6 +99,35 @@ NOTE: the scanner ranks TECHNICALS only — no earnings-catalyst logic, and the
   earnings rule EXITS ~2d before every ER. "Beats-earnings" event plays (e.g. the
   user's HOOD call) are out of scope BY DESIGN, not a scanner miss.
 
+## UNUSUAL WHALES ENRICHMENT — PHASE 1 (added 2026-07-02)
+Engine: scratchpad/uw.py -> `python3 uw.py TICKER [put|call]`.
+Base https://api.unusualwhales.com | headers: Authorization: Bearer <UW_API_KEY>,
+UW-CLIENT-API-ID: 100001, User-Agent (WAF 403s the default urllib UA). Key read
+from env UW_API_KEY — NEVER hardcode/commit it. Add UW_API_KEY to the environment
+config alongside FMP_API_KEY for scheduled/real runs.
+DESIGN: UW is a Stage-2 CONFIRMATION layer on the live-gate shortlist ONLY — it
+does NOT drive the 120-name Stage-1 FMP technical scan (keeps API use low; keeps
+"research suggests, gates confirm"). Two signals:
+1) REAL IV-RANK (/interpolated-iv): IV percentile + IV + implied move at ~45 DTE.
+   This makes the IV-rank<=70 rail ENFORCEABLE (FMP has no historical IV; the
+   rail was unverifiable and we were hand-building iv_history.csv). Now a HARD
+   rail again. Also replaces the HV proxy in est_ticket (HV understates IV, e.g.
+   MNST HV 16% vs real IV 28%). IV-HOT (rank>70) = hard fail for buying premium.
+2) FLOW SENTIMENT (/options-volume): net_call - net_put premium + bullish-vs-
+   bearish premium + put/call vol ratio -> bias bullish/bearish/mixed.
+   FLOW-CONFIRM (agrees with our direction) vs FLOW-CONTRADICT (institutions on
+   the other side). SOFT gate for now: a contradiction downgrades conviction to
+   "marginal" (wrapper won't bless a marginal), but is NOT a hard veto — daily
+   flow is noisy; harden to a veto only after it earns it.
+FIRST READ (2026-07-02): all 3 open positions FLOW-CONTRADICT (NIO/PFE puts flow
+bullish; KDP call flow bearish) — a tell for the underwater book. Top technical
+calls MNST/CVS/BCS all FLOW-CONTRADICT (flow-bearish). HOOD = only bullish-flow
+call (+$25.2M) but IV-rank 90 = IV-HOT (spread, not naked). COP = cleanest put
+(IV-rank 36 + confirming bearish flow).
+PHASE 2 (roadmap, not built): GEX/spot-exposures (dealer gamma -> strike select
++ support levels), market-tide (augment the SPY regime gate with options-market
+sentiment), flow-alerts (filtered unusual prints as color). Pick before build.
+
 ## FUNDING PLAN
 Target deposit ~$2,000 (not yet funded). Until then operate on ~$400 initial;
 expect most scans = NO TRADE on buying power.
