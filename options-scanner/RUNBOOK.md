@@ -56,10 +56,13 @@ stocks (scan-only). Default answer is NO TRADE.
 6. Live gates on survivors' chosen (liquid monthly) expiry: delta band, OI>=500,
    spread<=10% of mid, IV-rank<=70. IV-rank is now a REAL number from `uw.py`
    (UW interpolated-iv) — no longer unverifiable; it is a HARD rail again.
-6b. UW CONFIRMATION (`uw.py TICKER put|call`): pull real IV-rank + options-flow
-   bias on each survivor. FLOW-CONFIRM = smart money agrees; FLOW-CONTRADICT =
-   institutions on the other side -> SOFT gate: downgrade conviction (treat as
-   marginal), do not hard-veto yet. IV-HOT (rank>70) IS a hard fail.
+6b. UW CONFIRMATION (`uw.py TICKER put|call`): per survivor, three reads —
+   (i) real IV-rank (IV-HOT rank>70 = HARD fail); (ii) today's flow bias
+   (FLOW-CONFIRM / FLOW-CONTRADICT); (iii) multi-day PERSISTENCE
+   (ACCUMULATION / CONTRA=DISTRIBUTION / BUILDING / NEUTRAL — is smart money
+   building our direction over ~5 sessions, or is today a blip?). SOFT gate:
+   FLOW-CONTRADICT or CONTRA -> treat as marginal (wrapper won't bless marginal);
+   ACCUMULATION strengthens conviction. Only IV-HOT is a hard veto.
 7. Safety wrapper (PUTS only): APPROVE iff all gates pass AND debit <= RISK_PER_TRADE
    AND open-put premium <= min(sleeve cap, live BP) AND conviction not marginal
    (a FLOW-CONTRADICT counts as marginal). Limit only, <= mid*1.02 (no chasing).

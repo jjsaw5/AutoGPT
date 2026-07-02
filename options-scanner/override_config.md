@@ -138,10 +138,29 @@ on top. SOFT overlay:
 Example (2026-07-02): structure UPTREND but tide BEARISH -$970M (deteriorated
 from +$24M at the open) = DIVERGENT -> new calls marginal today. Explained why
 MNST/CVS/BCS all showed bearish single-name flow (whole tape was risk-off).
-PHASE 2b (roadmap, not built): flow persistence (multi-day opening-trade
-accumulation — extend the 1-day flow snapshot to our multi-week hold), insider
-transactions (exec buying = multi-week bullish catalyst). GEX de-prioritized:
-intraday tool, poor fit for 30-60 DTE swing holds.
+PHASE 2b — FLOW PERSISTENCE (BUILT 2026-07-02):
+uw.flow_persistence(ticker, direction) — folded into uw.confirm() and the
+`python3 uw.py TICKER put|call` display. A 1-day flow snapshot can't tell a blip
+from accumulation, but our holds run weeks. Two clock-independent reads (dates
+come from the data, not the container clock, which is unreliable here):
+  A) VOLUME TREND (options-volume 3d/7d/30d avgs, reuses the cached row): is the
+     thesis-direction's share of volume above its 30d baseline AND rising over
+     3d? Plus vol_surge = today_total / 30d_avg (>1 hot, <1 cooling).
+  B) MULTI-DAY OPENING PRINTS (flow-alerts, ~6 sessions): single-leg, expiry
+     >= 14 DTE (skip 0DTE/weekly scalps), net ask-side minus bid-side premium in
+     our direction over the last 5 sessions. all_opening_trades is UNUSABLE
+     (False on every row) -> volume_oi_ratio>=1 flags likely NEW positioning
+     instead. Net edge below $250k = flat (noise floor).
+  VERDICT: ACCUMULATION (volume building AND opening prints agree) / CONTRA
+  (opening size going the OTHER way = DISTRIBUTION) / BUILDING (one read agrees)
+  / NEUTRAL. Soft gate: ACCUMULATION strengthens conviction; CONTRA downgrades
+  to marginal (same treatment as FLOW-CONTRADICT).
+Live 2026-07-02 (surfaced multi-day divergences the snapshot hid): CVS call
+BUILDING (+$1.5M opening call prints over 5d, 8 new — bullish case stronger than
+today's bearish snapshot); PDD put CONTRA (+$3.3M bullish opening prints AGAINST
+the put -> avoid); NIO put CONTRA (+$0.5M bullish prints vs our open put).
+PHASE 2c (roadmap, not built): insider transactions (exec buying = multi-week
+bullish catalyst). GEX de-prioritized: intraday tool, poor fit for 30-60 DTE.
 
 ## FUNDING PLAN
 Target deposit ~$2,000 (not yet funded). Until then operate on ~$400 initial;
