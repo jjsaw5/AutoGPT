@@ -16,7 +16,7 @@ direction), OI>=500, spread<=10% of mid, IV-rank<=70, safety wrapper.
 
 Usage: python3 scanner.py [put|call|both]   (default: both)
 """
-import os, sys, json, math, urllib.request, urllib.parse, concurrent.futures as cf
+import os, sys, json, math, datetime, urllib.request, urllib.parse, concurrent.futures as cf
 
 DTE_MID = 45          # midpoint of the 30-60 DTE window, used for premium estimate
 TICKET_MAX = 350      # ~ RISK_PER_TRADE; a ticket is "affordable" at/under this
@@ -148,9 +148,20 @@ def profile(sym):
             _profiles[sym] = ("?", "?")
     return _profiles[sym]
 
-# ---- benchmark ----
+# ---- benchmark + MARKET REGIME (added 2026-07-01) ----
+# Direction allocation follows the tape: fighting a rising market with a full
+# bearish sleeve was the week-one loss driver. The regime gate halves the
+# sleeve cap for NEW counter-trend entries (open positions grandfathered but
+# count toward the cap). With-trend side keeps its full cap.
 _, _, _, spy_c = series("SPY")
 spy_r63 = ret(spy_c, 63)
+spy_p, spy_s50, spy_s200 = spy_c[-1], sma(spy_c, 50), sma(spy_c, 200)
+if spy_p > spy_s50 and spy_p > spy_s200:
+    REGIME = "UPTREND"      # counter-trend = puts
+elif spy_p < spy_s50 and spy_p < spy_s200:
+    REGIME = "DOWNTREND"    # counter-trend = calls
+else:
+    REGIME = "MIXED"        # no restriction
 
 def metrics(sym):
     try:
@@ -226,7 +237,16 @@ try:
 except urllib.error.HTTPError:
     syms = list(FALLBACK_UNIVERSE)
     src = "fallback list (screener 402)"
-print(f"Universe: {len(syms)} liquid names [{src}] | SPY 63d = {spy_r63:+.1f}% | direction={DIRECTION}\n")
+print(f"Universe: {len(syms)} liquid names [{src}] | SPY 63d = {spy_r63:+.1f}% | direction={DIRECTION}")
+print(f"REGIME: {REGIME}  (SPY {spy_p:.0f} vs 50DMA {spy_s50:.0f} / 200DMA {spy_s200:.0f})")
+if REGIME == "UPTREND":
+    print("  REGIME GATE: counter-trend = PUTS. New-put entries only while total open-put")
+    print("  premium stays under 50% of the put sleeve ($200 of $400). Calls: full cap.\n")
+elif REGIME == "DOWNTREND":
+    print("  REGIME GATE: counter-trend = CALLS. New-call entries only while total open-call")
+    print("  premium stays under 50% of the call sleeve ($200 of $400). Puts: full cap.\n")
+else:
+    print("  REGIME GATE: MIXED — both sleeves at full cap.\n")
 
 rows = []
 with cf.ThreadPoolExecutor(max_workers=8) as ex:
@@ -271,7 +291,9 @@ if DIRECTION in ("put", "both"):
     if vetoed_p:
         print(f"  Oversold (RSI<30) vetoed from put list: {', '.join(vetoed_p)}\n")
     tickets("PUT TICKETS (live-tradeable)", sp)
-    out["puts"] = [{"sym": m["sym"], "score": round(s, 2), "est_ticket": m["est_ticket"]}
+    out["puts"] = [{"sym": m["sym"], "score": round(s, 2), "est_ticket": m["est_ticket"],
+                    "rsi": round(m["rsi"]) if m["rsi"] is not None else None,
+                    "pct50": round(m["pct50"], 1), "rel": round(m["rel"], 1) if m["rel"] is not None else None}
                    for m, s, _, veto in sp if not veto]
 if DIRECTION in ("call", "both"):
     sc = sorted(((m,) + score_call(m) for m in rows), key=lambda x: -x[1])
@@ -282,9 +304,24 @@ if DIRECTION in ("call", "both"):
     if vetoed:
         print(f"  Overbought (RSI>80) vetoed from call list: {', '.join(vetoed)}\n")
     tickets("CALL TICKETS (live-tradeable)", sc)   # calls enabled 2026-07-01 (user override)
-    out["calls"] = [{"sym": m["sym"], "score": round(s, 2), "est_ticket": m["est_ticket"]}
+    out["calls"] = [{"sym": m["sym"], "score": round(s, 2), "est_ticket": m["est_ticket"],
+                     "rsi": round(m["rsi"]) if m["rsi"] is not None else None,
+                     "pct50": round(m["pct50"], 1), "rel": round(m["rel"], 1) if m["rel"] is not None else None}
                     for m, s, _, veto in actionable]
+
+out["regime"] = {"state": REGIME, "spy": round(spy_p, 2),
+                 "spy_50dma": round(spy_s50, 2), "spy_200dma": round(spy_s200, 2),
+                 "spy_r63": round(spy_r63, 1)}
 
 with open(os.path.join(os.path.dirname(__file__), "ranked_dir.json"), "w") as f:
     json.dump(out, f)
-print("Saved ranked_dir.json")
+
+# Persist a dated snapshot (top 15/side) to the repo — the backtest/feedback
+# dataset. One JSON line per run; committed to git, unlike ranked_dir.json.
+# Stamp with the US-market date, not container UTC (evening runs would roll over).
+_et = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=5)
+snap = {"date": str(_et.date()), "regime": out["regime"],
+        "puts": out.get("puts", [])[:15], "calls": out.get("calls", [])[:15]}
+with open(os.path.join(os.path.dirname(__file__), "scan_history.jsonl"), "a") as f:
+    f.write(json.dumps(snap) + "\n")
+print("Saved ranked_dir.json + appended scan_history.jsonl")

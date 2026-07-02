@@ -1,0 +1,27 @@
+date,symbol,contract,iv_pct,source
+2026-06-26,BILI,2026-08-21 $17 P,59.2,live quote (entry)
+2026-06-26,DOCU,2026-08-21 $45 P,54.9,live quote
+2026-06-26,SOFI,2026-07-31 $17.5 C,65.6,live quote
+2026-06-26,SOFI,2026-07-31 $17.5 P,65.9,live quote
+2026-06-26,CCL,2026-08-21 $29 C,46.0,live quote
+2026-06-26,CCL,2026-08-21 $29 P,47.0,live quote
+2026-06-26,PFE,2026-07-31 $25 P,30.4,live quote
+2026-06-26,RIVN,2026-07-31 $16 P,71.8,live quote
+2026-06-26,T,2026-08-21 $22 P,33.6,live quote
+2026-06-30,BILI,2026-08-21 $17 P,60.2,live quote
+2026-06-30,NIO,2026-08-21 $5 P,59.5,live quote
+2026-06-30,JD,2026-08-21 $26 P,39.7,live quote (entry)
+2026-06-30,GAP,2026-08-21 $19 P,44.5,live quote
+2026-06-30,BSX,2026-08-21 $45 P,46.8,live quote
+2026-06-30,CPRT,2026-08-21 $30 P,29.1,live quote
+2026-06-30,MRNA,2026-08-21 $75 C,94.2,live quote
+2026-06-30,AMD,2026-08-21 $560 C,78.6,live quote
+2026-06-30,T,2026-08-21 $22 P,34.5,live quote
+2026-07-01,BILI,2026-08-21 $17 P,58.5,live quote (exit)
+2026-07-01,NIO,2026-08-21 $5 P,58.7,live quote
+2026-07-01,JD,2026-08-21 $26 P,41.3,live quote
+2026-07-01,PFE,2026-08-21 $24 P,28.6,live quote (entry)
+2026-07-01,KDP,2026-08-21 $33 C,27.9,live quote (entry)
+2026-07-01,CPRT,2026-08-21 $30 P,28.0,live quote
+2026-07-01,CGNX,2026-08-21 $75 C,68.8,live quote
+2026-07-01,DKNG,2026-08-21 $27.5 C,58.8,live quote

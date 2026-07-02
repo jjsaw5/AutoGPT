@@ -37,6 +37,16 @@ Delta band: PUT [-0.65,-0.45] nearest -0.55 ; CALL [+0.45,+0.65] nearest +0.55.
    per non-US COUNTRY. Rationale: NIO+JD+BILI were "three tickers, one China bet."
    NIO+JD (China, bearish) = 2/2 grandfathered AT CAP — no new China-bearish adds
    until one closes. Scanner now prints sector/country per candidate (FMP profile).
+4) MARKET REGIME GATE: scanner computes SPY vs its 50/200-DMA each run.
+   UPTREND (SPY above both) -> puts are counter-trend: NEW put entries allowed only
+   while total open-put premium < 50% of the put sleeve ($200 of $400); open
+   positions grandfathered but count toward it. DOWNTREND -> mirror for calls.
+   MIXED -> no restriction. Rationale: week one deployed 3-4 puts into a +14% tape.
+   STATUS at install: UPTREND + put sleeve $325 -> NEW PUTS BLOCKED until puts < $200.
+5) FEEDBACK LOOP (data): journal.csv (every open/close with gate values at entry),
+   iv_history.csv (every live ATM IV observed — builds our own IV-rank series; the
+   IV-rank<=70 rail has been unverifiable until this accrues ~30 days of data),
+   scan_history.jsonl (auto-appended dated snapshot of each scan's top 15/side).
 
 ## EARNINGS = PRE-ER TIME-STOP (replaces "block if expiry crosses ER")
 Engine: scratchpad/earnings_exit.py. Principle unchanged: NEVER hold a long
