@@ -6,3 +6,5 @@ date,action,symbol,type,strike,expiry,qty,price,cash_flow,score,rsi,delta,iv_pct
 2026-07-01,open,PFE,put,24,2026-08-21,1,0.99,-99.04,11.2,33,-0.47,29,2.0,14112,UPTREND,Healthcare,US,,cleanest put entry (2% spread / 28% IV); $0.01 price improvement
 2026-07-01,open,KDP,call,33,2026-08-21,1,1.70,-170.04,12.50,68,0.59,28,9.0,3056,UPTREND,Consumer Defensive,US,,first call — calls enabled by user override; bullish counterweight to put book
 2026-07-02,close,JD,put,26,2026-08-21,1,1.23,123.00,,,,,,,UPTREND,Consumer Cyclical,CN,-55.04,discretionary trim (BILI pattern): laggard -29%, delta decayed -.52->-.42, stock rose against thesis toward 50-DMA on a down-tape day; frees China-bearish slot
+2026-07-01,open,RR,call,3,2028-01-21,1,0.97,-97.00,,,0.68,115,,14657,,,GB,,OFF-BOOK user-personal (not scanner) — user's own idea; 2028 LEAP IV~115% speculative; excluded from sleeve/cap/concentration; not managed
+2026-07-01,open,CVS,call,105,2026-08-21,1,4.55,-455.00,,67,0.55,31,,,UPTREND,Healthcare,US,,OFF-BOOK — filled in INDIVIDUAL account by routing mistake (not ••2861); user-managed; note pre-ER time-stop ~7/28 (ER ~7/30)

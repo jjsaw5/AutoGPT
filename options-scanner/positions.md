@@ -56,14 +56,18 @@
 
 ## REMAINING EQUITY (not liquidated): MRK, MA, JPM, V, KO, AMD
 
-## OFF-BOOK / NEEDS RECONCILIATION
+## OFF-BOOK — USER-PERSONAL (logged, NOT scanner-managed)
+These are the user's own positions. The scanner does NOT govern them (no rails,
+no monitored exits, no sleeve/concentration accounting) and will NOT trade them.
+Recorded here for a complete picture only. User manages all exits.
 - RR (Rolls-Royce) 2028-01-21 $3.00 CALL — 1 ct, avg $97, opened 7/1 in ••2861.
-  NOT placed by the scanner and NOT governed by our rails (IV ~115%, 2028 LEAP,
-  highly speculative). Mark 7/2 ~$0.865 (-11%). AWAITING USER CONFIRMATION — keep
-  as a personal position, or bring under management? Untouched until user decides.
-- CVS 2026-07-?? $105 CALL @ $4.55 — filled in the Individual account, NOT ••2861.
-  Not visible/manageable here. USER MANAGES MANUALLY, incl. hard time-stop 7/28
-  (before ER 7/30).
+  CONFIRMED 7/2: user's own idea, not a scanner play. IV ~115%, 2028 LEAP,
+  highly speculative. Mark 7/2 ~$0.865 (-11%). Sits in ••2861 but excluded from
+  all sleeve/cap/concentration math. Left untouched.
+- CVS 2026-08-21 $105 CALL @ $4.55 — filled in the INDIVIDUAL account (routing
+  mistake, confirmed 7/2 by user; intended for ••2861 but the app defaulted to
+  Individual). Not visible/manageable from here. USER MANAGES MANUALLY — note the
+  hard pre-earnings time-stop ~7/28 (before ER ~7/30) if kept as an earnings-avoid play.
 
 ## CLOSED / CANCELLED
 - JD 2026-08-21 $26 PUT — CLOSED 2026-07-02 @ $1.23 (sell order 6a46a3e7-7fa5-4826-9c1c-baa8d2da806e,
