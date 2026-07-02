@@ -27,6 +27,14 @@ from ..models import (
 _STRONG = 0.6
 _MODERATE = 0.35
 
+# Long premium has theoretically unbounded upside, so any "max profit" is a
+# placeholder. For EV purposes we use a realistic *taken-profit* reward:risk
+# target rather than a best-case number — chosen to sit inside the reward:risk
+# range that defined-risk spreads span (~0.5-1.5) so pool-level EV normalization
+# (§6a) doesn't systematically favor long options over spreads. Priors — §9.
+_LONG_TARGET_RR = 1.3
+_LEAPS_TARGET_RR = 1.5  # longer horizon / deep-ITM => a touch more room to run
+
 
 def select_structure(
     candidate: Candidate, thesis: Thesis, config: Config
@@ -140,7 +148,7 @@ def _long_option(price: float, *, call: bool) -> Structure:
     return Structure(
         structure_type=StructureType.LONG_CALL if call else StructureType.LONG_PUT,
         legs=[Leg("buy", opt, strike, _exp("swing"))],
-        max_profit=max_loss * 2,  # nominal 2R target (uncapped in reality)
+        max_profit=round(max_loss * _LONG_TARGET_RR, 2),  # realistic taken-profit target
         max_loss=round(max_loss, 2),
         breakevens=[round(be, 2)],
         rationale="cheap vol, strong conviction — long premium",
@@ -158,7 +166,7 @@ def _leaps(price: float, *, call: bool) -> Structure:
     return Structure(
         structure_type=StructureType.LEAPS,
         legs=[Leg("buy", opt, strike, _exp("leaps"))],
-        max_profit=max_loss * 1.5,
+        max_profit=round(max_loss * _LEAPS_TARGET_RR, 2),
         max_loss=round(max_loss, 2),
         breakevens=[round(be, 2)],
         rationale="cheap vol, LEAPS deep-ITM stock replacement (~0.75Δ)",
