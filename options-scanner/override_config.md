@@ -8,9 +8,13 @@ Updated: 2026-06-26 ~10:0x ET. Account: Agentic ••2861 (992952861), cash, op
   Separate CALL_SLEEVE_CAP = $400. Rationale: bullish calls diversify the all-bearish put book.
 
 ## SIZING / CAPS  (user instruction)
-- RISK_PER_TRADE = $350 (max loss on a single option = debit paid).
+- RISK_PER_TRADE = $350 (max loss on a single option = debit paid). UNCHANGED —
+  this is what blocks big single tickets (CGNX ~$585, MRNA ~$865), not the sleeve.
 - PUT_SLEEVE_CAP  = $400   (separate)
-- CALL_SLEEVE_CAP = $400   (separate, but moot while scan-only)
+- CALL_SLEEVE_CAP = $600   (RAISED from $400, user override 2026-07-01: "don't
+  want to be restricted on good plays; I can add more." Risk stated: $600 calls +
+  $400 puts = $1000 potential premium vs ~$840 account — BP floor still binds
+  actual spend; calls are with-trend under the current UPTREND regime.)
 - HARD FLOOR: every order also bounded by live buying power. TODAY account ~$370
   total, so real ceiling is BP (~$366 if fully liquidated), NOT the $400 caps.
   Separate $350-400 caps only become fundable at the planned $2,000 deposit

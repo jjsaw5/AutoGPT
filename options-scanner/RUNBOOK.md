@@ -40,8 +40,9 @@ stocks (scan-only). Default answer is NO TRADE.
 4. Stage 1 — `scanner.py both` -> ranked weakness/strength + HV EST$ tickets.
    The banner prints the MARKET REGIME (SPY vs its 50/200-DMA). REGIME GATE:
    new COUNTER-TREND entries only while that side's total open premium is under
-   50% of its sleeve ($200 of $400); open positions grandfathered but count.
-   With-trend side keeps the full cap. (UPTREND -> puts are counter-trend.)
+   50% of its sleeve (puts: $200 of $400 | calls: $300 of $600); open positions
+   grandfathered but count. With-trend side keeps the full cap.
+   (UPTREND -> puts are counter-trend.)
    Each run auto-appends a dated snapshot to scan_history.jsonl (backtest data).
 5. Earnings — `earnings_exit.py` on affordable candidates -> CLEAN/TIME-STOP/BLOCK.
 6. Live gates on survivors' chosen (liquid monthly) expiry: delta band, OI>=500,

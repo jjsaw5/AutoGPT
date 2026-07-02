@@ -244,7 +244,7 @@ if REGIME == "UPTREND":
     print("  premium stays under 50% of the put sleeve ($200 of $400). Calls: full cap.\n")
 elif REGIME == "DOWNTREND":
     print("  REGIME GATE: counter-trend = CALLS. New-call entries only while total open-call")
-    print("  premium stays under 50% of the call sleeve ($200 of $400). Puts: full cap.\n")
+    print("  premium stays under 50% of the call sleeve ($300 of $600). Puts: full cap.\n")
 else:
     print("  REGIME GATE: MIXED — both sleeves at full cap.\n")
 
