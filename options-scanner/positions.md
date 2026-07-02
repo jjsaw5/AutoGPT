@@ -9,6 +9,8 @@
 1. TAKE-PROFIT (resting): GTC sell_to_close @ $0.96 (+100%) — order 6a428fcf-9591-462b-a56b-e3bb2b6aa207
 2. NO TIME-STOP — earnings CLEAN (ER 9/1).
 3. THESIS EXIT: close if NIO reclaims 50-DMA (~$5.68).
+4. STOP-LOSS (monitored): close if put mark <= $0.24 (-50% of $0.48 debit).
+- Sector/Country: Consumer Cyclical / CHINA.
 
 ## JD long put  [OPENED 2026-06-30 — scanner, clean no-override entry]
 - Contract: JD 2026-08-21 $26.00 PUT (long_put)
@@ -20,6 +22,8 @@
 1. TAKE-PROFIT (resting): GTC sell_to_close @ $3.55 (+100%) — order 6a43dcce-18bf-44f8-a041-c1a7bd759116
 2. TIME-STOP (MONITORED, DATE): CLOSE ON/BEFORE 2026-08-11 (2d before ER 8/13).
 3. THESIS EXIT: close if JD reclaims 50-DMA (WATCH — JD +3.2% on 7/1, closing on it).
+4. STOP-LOSS (monitored): close if put mark <= $0.89 (-50% of $1.78 debit).
+- Sector/Country: Consumer Cyclical / CHINA.
 
 ## PFE long put  [OPENED 2026-07-01 — scanner, clean no-override entry]
 - Contract: PFE 2026-08-21 $24.00 PUT (long_put)
@@ -31,6 +35,8 @@
 1. TAKE-PROFIT (resting): GTC sell_to_close @ $1.98 (+100%) — order 6a453165-0766-40e4-9c9e-3b4e522439cb
 2. TIME-STOP (MONITORED, DATE): CLOSE ON/BEFORE 2026-08-02 (2d before ER 8/4).
 3. THESIS EXIT: close if PFE reclaims 50-DMA (~$25.8).
+4. STOP-LOSS (monitored): close if put mark <= $0.50 (-50% of $0.99 debit).
+- Sector/Country: Healthcare / US.
 
 ## KDP long CALL  [OPENED 2026-07-01 — FIRST CALL; calls enabled per user override]
 - Contract: KDP 2026-08-21 $33.00 CALL (long_call)
@@ -43,11 +49,18 @@
 1. TAKE-PROFIT (resting): GTC sell_to_close @ $3.40 (+100%) — order 6a45329a-9312-4c7b-be30-4690073c969e
 2. TIME-STOP (MONITORED, DATE): CLOSE ON/BEFORE 2026-08-04 (2d before ER 8/6).
 3. THESIS EXIT (CALL): close if KDP LOSES its 50-DMA.
+4. STOP-LOSS (monitored): close if call mark <= $0.85 (-50% of $1.70 debit).
+- Sector/Country: Consumer Defensive / US.
 
 ## CAP USAGE
 - Open puts: 3 / 5 (MAX_OPEN). Open calls: 1.
 - PUT sleeve used: NIO $48 + JD $178 + PFE $99 = $325 / $400  ->  ROOM = ~$75.
 - CALL sleeve used: KDP $170 / $400  ->  ROOM = ~$230. (Calls now LIVE-tradeable per user override 7/1.)
+- CONCENTRATION (max 2 same-direction per sector / non-US country):
+  * CHINA bearish: NIO + JD = 2/2 AT CAP (grandfathered) — NO new China puts until one closes.
+  * Healthcare bearish: PFE = 1/2. Consumer Defensive bullish: KDP = 1/2.
+- STOP-LOSSES (monitored -50% of debit): NIO <= $0.24 | JD <= $0.89 | PFE <= $0.50 | KDP <= $0.85.
+  As of 7/1 close: NIO ~$0.40, JD ~$1.41, PFE ~$0.99, KDP ~$1.70 — none triggered.
 - BP: $370 settled (+$119 pending from BILI trade, clears ~7/2). Sleeve (not BP) is the binding limit.
 - NOTE: account grew to ~$846 via deposits; $400 sleeve cap now ~47% of account. Consider
   a deliberate cap resize if scaling up (discussed, not yet changed).

@@ -132,6 +132,22 @@ def est_ticket(price, vol, dte=DTE_MID):
     if not vol: return None
     return round(0.4 * price * vol * math.sqrt(dte / 365) * 100)
 
+# ---- sector/country tags (for the concentration cap) ----
+_profiles = {}
+def profile(sym):
+    """Sector + country from FMP profile, cached. Used to enforce the
+    CONCENTRATION CAP: max 2 same-direction open positions per sector, and
+    max 2 per non-US country (the NIO+JD 'one bet, three tickers' lesson).
+    Safe on failure -> ('?', '?')."""
+    if sym not in _profiles:
+        try:
+            d = get("profile", symbol=sym)
+            p0 = d[0] if isinstance(d, list) and d else {}
+            _profiles[sym] = (p0.get("sector") or "?", p0.get("country") or "?")
+        except Exception:
+            _profiles[sym] = ("?", "?")
+    return _profiles[sym]
+
 # ---- benchmark ----
 _, _, _, spy_c = series("SPY")
 spy_r63 = ret(spy_c, 63)
@@ -161,7 +177,7 @@ def metrics(sym):
 
 # ---- direction-sensitive scoring ----
 def score_put(m):
-    """WEAKNESS — higher = weaker = better put candidate."""
+    """WEAKNESS — higher = weaker = better put candidate. Oversold (RSI<30) = VETO."""
     p, s = 0.0, m
     below50, below200, death = s["price"] < s["s50"], s["price"] < s["s200"], s["death"]
     neg_rel = s["rel"] is not None and s["rel"] < 0
@@ -171,10 +187,14 @@ def score_put(m):
     p += min(2.0, max(0, -s["pct50"]) / 5)
     p += min(2.0, max(0, -s["pct200"]) / 10)
     if s["rel"] is not None: p += min(2.0, max(0, -s["rel"]) / 10)
-    if s["rsi"] is not None and s["rsi"] < 30: p += 1.0
     if not s["macd_bull"]: p += 0.5                      # bearish momentum confirm
-    flags = "".join(["D" if death else "-", "B" if support_break else "-"])
-    return p, flags, False
+    # Deep-oversold names are bounce-prone: buying puts at RSI<30 chases an
+    # already-extended move (the BILI/JD lesson). Was a +1 score bonus — now a
+    # hard veto, mirroring the call side's RSI>80 overbought veto.
+    oversold = s["rsi"] is not None and s["rsi"] < 30
+    flags = "".join(["D" if death else "-", "B" if support_break else "-",
+                     "!" if oversold else "-"])
+    return p, flags, oversold
 
 def score_call(m):
     """STRENGTH — higher = stronger = better call candidate. Overbought = veto."""
@@ -189,7 +209,7 @@ def score_call(m):
     if s["rel"] is not None: p += min(2.0, max(0, s["rel"]) / 10)
     if s["macd_bull"]: p += 0.5                           # bullish momentum confirm
     if s["adx"] is not None and s["adx"] >= 20: p += 0.5  # trend quality
-    overbought = s["rsi"] is not None and s["rsi"] > 80   # NEW guard, no put analog
+    overbought = s["rsi"] is not None and s["rsi"] > 80   # blow-off guard (put analog: RSI<30)
     near_high = s["price"] >= s["high52"] * 0.98
     flags = "".join(["G" if golden else "-", "U" if breakout else "-",
                      "!" if overbought else "-"])
@@ -219,7 +239,7 @@ def table(title, scored, is_call):
            f"{'RELvSPY':>9}{'ADX':>6}{'HV%':>6}{'EST$':>6}{'FLAGS':>7}{'SCORE':>7}")
     print(hdr)
     for i, (m, sc, fl, veto) in enumerate(scored[:12], 1):
-        tag = " OVERBOUGHT-VETO" if (is_call and veto) else ""
+        tag = ("" if not veto else (" OVERBOUGHT-VETO" if is_call else " OVERSOLD-VETO"))
         print(f"{i:<3}{m['sym']:<7}{m['price']:>9.2f}{m['pct50']:>7.1f}{m['pct200']:>7.1f}"
               f"{(m['rsi'] or 0):>5.0f}{(m['rel'] or 0):>+9.1f}{(m['adx'] or 0):>6.0f}"
               f"{(m['hv'] or 0)*100:>6.0f}{(m['est_ticket'] or 0):>6}{fl:>7}{sc:>7.2f}{tag}")
@@ -233,19 +253,26 @@ def tickets(title, scored):
     print(f"=== {title}: est. ticket <= ${TICKET_MAX} (HV-based, ~0.55delta ~ ATM) ===")
     if not fit:
         print("  (none fit the ticket from this universe)\n"); return
-    print(f"{'SYM':<7}{'PRICE':>9}{'HV%':>6}{'EST_TICKET':>11}{'RSI':>5}{'ADX':>6}{'SCORE':>7}")
+    print(f"{'SYM':<7}{'PRICE':>9}{'HV%':>6}{'EST_TICKET':>11}{'RSI':>5}{'ADX':>6}{'SCORE':>7}  SECTOR / COUNTRY")
     for m, sc in fit[:10]:
+        sec, ctry = profile(m["sym"])
         print(f"{m['sym']:<7}{m['price']:>9.2f}{(m['hv'] or 0)*100:>6.0f}"
-              f"{'$'+str(m['est_ticket']):>11}{(m['rsi'] or 0):>5.0f}{(m['adx'] or 0):>6.0f}{sc:>7.2f}")
-    print("  NOTE: estimate only — confirm live via OI>=500, spread<=10%, real delta/IV.\n")
+              f"{'$'+str(m['est_ticket']):>11}{(m['rsi'] or 0):>5.0f}{(m['adx'] or 0):>6.0f}{sc:>7.2f}"
+              f"  {sec} / {ctry}")
+    print("  NOTE: estimate only — confirm live via OI>=500, spread<=10%, real delta/IV.")
+    print("  CONCENTRATION CAP: max 2 same-direction positions per sector / non-US country")
+    print("  — check open positions in positions.md before adding.\n")
 
 out = {}
 if DIRECTION in ("put", "both"):
     sp = sorted(((m,) + score_put(m) for m in rows), key=lambda x: -x[1])
-    table("PUT candidates  — WEAKNESS  (flags: D=death-cross  B=support-break)", sp, False)
+    table("PUT candidates  — WEAKNESS  (flags: D=death-cross  B=support-break  !=oversold)", sp, False)
+    vetoed_p = [t[0]["sym"] for t in sp if t[3]][:10]
+    if vetoed_p:
+        print(f"  Oversold (RSI<30) vetoed from put list: {', '.join(vetoed_p)}\n")
     tickets("PUT TICKETS (live-tradeable)", sp)
     out["puts"] = [{"sym": m["sym"], "score": round(s, 2), "est_ticket": m["est_ticket"]}
-                   for m, s, _, _ in sp]
+                   for m, s, _, veto in sp if not veto]
 if DIRECTION in ("call", "both"):
     sc = sorted(((m,) + score_call(m) for m in rows), key=lambda x: -x[1])
     # actionable = strong but NOT overbought-vetoed
@@ -254,7 +281,7 @@ if DIRECTION in ("call", "both"):
     vetoed = [t[0]["sym"] for t in sc if t[3]][:8]
     if vetoed:
         print(f"  Overbought (RSI>80) vetoed from call list: {', '.join(vetoed)}\n")
-    tickets("CALL TICKETS (scan-only)", sc)   # affordability-staged for eyeballing
+    tickets("CALL TICKETS (live-tradeable)", sc)   # calls enabled 2026-07-01 (user override)
     out["calls"] = [{"sym": m["sym"], "score": round(s, 2), "est_ticket": m["est_ticket"]}
                     for m, s, _, veto in actionable]
 

@@ -26,6 +26,8 @@ stocks (scan-only). Default answer is NO TRADE.
 1. HOURS check — abort if market closed.
 2. MANAGE OPEN POSITIONS FIRST (see positions.md):
    - Verify each resting GTC take-profit is still working.
+   - Check each PREMIUM STOP-LOSS: close any long option whose mark <= 50% of
+     entry debit (monitored — per-position stop levels are in positions.md).
    - Check each TIME-STOP date — close on/before it (date-based, monitored;
      a resting order cannot enforce this).
    - Check each thesis exit (PUT: stock reclaims 50-DMA / CALL: loses 50-DMA).
@@ -51,6 +53,10 @@ OI>=500, spread<=10% of mid, IV-rank<=70, earnings time-stop, DAILY_CAP 3,
 MAX_OPEN 5, regular hours, deterministic safety wrapper = only door to a fill,
 fill-truth via get_option_orders. Overriding any cap needs explicit written
 user instruction (log it + state the risk).
+Risk upgrades (2026-07-01): RSI entry vetoes (puts: reject RSI<30 oversold;
+calls: reject RSI>80 overbought), PREMIUM STOP-LOSS -50% of debit (monitored
+every run), CONCENTRATION CAP (max 2 same-direction positions per sector /
+non-US country — scanner prints sector/country per candidate).
 
 ## Known gotchas
 - FMP plan: some symbols 402 (uncovered); SMA/RSI endpoints 402 (we compute from

@@ -24,6 +24,20 @@ DAILY_CAP=3, MAX_OPEN=5, regular hours only, deterministic safety wrapper is the
 only door to a fill, fill-truth via get_option_orders.
 Delta band: PUT [-0.65,-0.45] nearest -0.55 ; CALL [+0.45,+0.65] nearest +0.55.
 
+## RISK UPGRADES (added 2026-07-01 after first-week assessment)
+1) PREMIUM STOP-LOSS: close any long option at -50% of entry debit (MONITORED at
+   every run — a resting order can't do OCO here). Rationale: the 50-DMA thesis
+   exit sits 10%+ away for deep-below-DMA entries, so BILI bled -31% with no rule
+   ever triggering. The loss side now has a hard premium-based line.
+2) OVERSOLD VETO (puts): REJECT new puts when underlying RSI14 < 30 — deep-oversold
+   names are bounce-prone (every put we bought bounced within days). Mirrors the
+   call side's RSI>80 overbought veto. The old RSI<30 score BONUS was removed
+   (it rewarded exactly the wrong thing).
+3) CONCENTRATION CAP: max 2 same-direction open positions per SECTOR, and max 2
+   per non-US COUNTRY. Rationale: NIO+JD+BILI were "three tickers, one China bet."
+   NIO+JD (China, bearish) = 2/2 grandfathered AT CAP — no new China-bearish adds
+   until one closes. Scanner now prints sector/country per candidate (FMP profile).
+
 ## EARNINGS = PRE-ER TIME-STOP (replaces "block if expiry crosses ER")
 Engine: scratchpad/earnings_exit.py. Principle unchanged: NEVER hold a long
 option through earnings (IV crush; buyer is on wrong side of the vol premium).
@@ -42,6 +56,8 @@ NOTE: MIN_RUNWAY=21 now BLOCKS BAC (16d runway). Names need ER >=23d out to qual
 2) Thesis exit: PUT -> stock reclaims 50-DMA / CALL -> stock loses 50-DMA (monitored).
 3) TIME-STOP exit: close on/before the pre-ER exit date (monitored, DATE-based —
    a resting order can't enforce this; must be actively closed before ER).
+4) PREMIUM STOP-LOSS (added 2026-07-01): close at -50% of entry debit (monitored
+   at every run). Per-position stop levels are listed in positions.md.
 
 ## ENGINE
 scratchpad/scanner.py  ->  python3 scanner.py [put|call|both]
