@@ -25,3 +25,7 @@ date,symbol,contract,iv_pct,source
 2026-07-01,CPRT,2026-08-21 $30 P,28.0,live quote
 2026-07-01,CGNX,2026-08-21 $75 C,68.8,live quote
 2026-07-01,DKNG,2026-08-21 $27.5 C,58.8,live quote
+2026-07-02,MNST,2026-08-21 $97.5 C,30.3,live quote (gate — OI 429 fail)
+2026-07-02,MNST,2026-08-21 $95 C,30.6,live quote (gate — debit>cap)
+2026-07-02,BCS,2026-08-21 $28 C,33.1,live quote (gate — spread 12.8% fail)
+2026-07-02,BCS,2026-08-21 $27 C,35.1,live quote (gate — OI/spread fail)
