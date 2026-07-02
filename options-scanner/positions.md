@@ -12,19 +12,6 @@
 4. STOP-LOSS (monitored): close if put mark <= $0.24 (-50% of $0.48 debit).
 - Sector/Country: Consumer Cyclical / CHINA.
 
-## JD long put  [OPENED 2026-06-30 — scanner, clean no-override entry]
-- Contract: JD 2026-08-21 $26.00 PUT (long_put)
-- Qty: 1 | Fill: $1.78 | Cost: $178.04 incl fees | MAX LOSS = $178.04
-- option_id: 99e44e8d-bd0d-4440-91fb-addef7f24653
-- Thesis: JD weak (death cross, below DMAs, neg rel-strength). Score 12.54.
-- Gates: delta -0.515, OI 1481, spread 2.8%, IV 40%. No overrides.
-### EXITS
-1. TAKE-PROFIT (resting): GTC sell_to_close @ $3.55 (+100%) — order 6a43dcce-18bf-44f8-a041-c1a7bd759116
-2. TIME-STOP (MONITORED, DATE): CLOSE ON/BEFORE 2026-08-11 (2d before ER 8/13).
-3. THESIS EXIT: close if JD reclaims 50-DMA (WATCH — JD +3.2% on 7/1, closing on it).
-4. STOP-LOSS (monitored): close if put mark <= $0.89 (-50% of $1.78 debit).
-- Sector/Country: Consumer Cyclical / CHINA.
-
 ## PFE long put  [OPENED 2026-07-01 — scanner, clean no-override entry]
 - Contract: PFE 2026-08-21 $24.00 PUT (long_put)
 - Qty: 1 | Fill: $0.99 | Cost: $99.04 incl fees | MAX LOSS = $99.04
@@ -52,23 +39,39 @@
 4. STOP-LOSS (monitored): close if call mark <= $0.85 (-50% of $1.70 debit).
 - Sector/Country: Consumer Defensive / US.
 
-## CAP USAGE
-- Open puts: 3 / 5 (MAX_OPEN). Open calls: 1.
-- PUT sleeve used: NIO $48 + JD $178 + PFE $99 = $325 / $400  ->  ROOM = ~$75.
+## CAP USAGE  (updated 2026-07-02 ~13:46 ET, after JD trim)
+- Open puts: 2 / 5 (MAX_OPEN). Open calls: 1 (+ RR LEAP, off-book — see below).
+- PUT sleeve used: NIO $48 + PFE $99 = $147 / $400  ->  ROOM = ~$253.
 - CALL sleeve used: KDP $170 / $600  ->  ROOM = ~$430. (Cap raised $400->$600 by user 7/1;
   calls LIVE-tradeable. RISK_PER_TRADE raised $350->$500 by user 7/2.)
 - CONCENTRATION (max 2 same-direction per sector / non-US country):
-  * CHINA bearish: NIO + JD = 2/2 AT CAP (grandfathered) — NO new China puts until one closes.
+  * CHINA bearish: NIO = 1/2 (JD closed 7/2 — slot freed).
   * Healthcare bearish: PFE = 1/2. Consumer Defensive bullish: KDP = 1/2.
-- STOP-LOSSES (monitored -50% of debit): NIO <= $0.24 | JD <= $0.89 | PFE <= $0.50 | KDP <= $0.85.
-  As of 7/1 close: NIO ~$0.40, JD ~$1.41, PFE ~$0.99, KDP ~$1.70 — none triggered.
-- BP: $370 settled (+$119 pending from BILI trade, clears ~7/2). Sleeve (not BP) is the binding limit.
-- NOTE: account grew to ~$846 via deposits; $400 sleeve cap now ~47% of account. Consider
-  a deliberate cap resize if scaling up (discussed, not yet changed).
+- STOP-LOSSES (monitored -50% of debit): NIO <= $0.24 | PFE <= $0.50 | KDP <= $0.85.
+  As of 7/2 ~13:46 ET: NIO ~$0.55 (+15%), PFE ~$0.82 (-18%), KDP ~$1.43 (-16%) — none triggered.
+- OPEN P&L (7/2 ~13:46 ET): NIO +$7 | PFE -$18 | KDP -$28 = net -$39 on managed book.
+- PORTFOLIO: total $790; options $494, equity $172, cash $123.89. BP = $123.89 (settled).
+  JD proceeds $123 settle T+1 (7/6, cash account). Sleeve (not BP) is the binding limit.
+- NOTE: account ~$790; $400 put sleeve now ~51% of account. Cap resize still open (discussed).
 
 ## REMAINING EQUITY (not liquidated): MRK, MA, JPM, V, KO, AMD
 
+## OFF-BOOK / NEEDS RECONCILIATION
+- RR (Rolls-Royce) 2028-01-21 $3.00 CALL — 1 ct, avg $97, opened 7/1 in ••2861.
+  NOT placed by the scanner and NOT governed by our rails (IV ~115%, 2028 LEAP,
+  highly speculative). Mark 7/2 ~$0.865 (-11%). AWAITING USER CONFIRMATION — keep
+  as a personal position, or bring under management? Untouched until user decides.
+- CVS 2026-07-?? $105 CALL @ $4.55 — filled in the Individual account, NOT ••2861.
+  Not visible/manageable here. USER MANAGES MANUALLY, incl. hard time-stop 7/28
+  (before ER 7/30).
+
 ## CLOSED / CANCELLED
+- JD 2026-08-21 $26 PUT — CLOSED 2026-07-02 @ $1.23 (sell order 6a46a3e7-7fa5-4826-9c1c-baa8d2da806e,
+  user-placed). Bought $1.78 (6/30), sold $1.23. REALIZED P&L = -$55.04 (-31%). Reason:
+  discretionary trim (BILI pattern) — laggard -29%, delta decayed -0.52 -> -0.42, underlying
+  rose against thesis toward its 50-DMA on a down-tape day (JD +0.3% while SPY -0.6%, NIO -4.5%).
+  No hard rail had fired; cut on deteriorating thesis. Freed the China-bearish concentration slot.
+  Resting +100% take-profit (6a43dcce) auto-voided on close.
 - BILI 2026-08-21 $17 PUT — CLOSED 2026-07-01 @ $1.20 (sell order 6a452e66-2a6b-4679-b478-7c73cebf236e).
   Bought $1.73 (6/26), sold $1.20. REALIZED P&L = -$53.04 (-31%). Reason: TRIMMED for
   risk/concentration — worst performer (-27%), underlying +8% against thesis over 5 days,

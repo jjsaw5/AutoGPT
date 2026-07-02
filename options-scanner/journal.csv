@@ -5,3 +5,4 @@ date,action,symbol,type,strike,expiry,qty,price,cash_flow,score,rsi,delta,iv_pct
 2026-07-01,close,BILI,put,17,2026-08-21,1,1.20,120.00,,,,,,,UPTREND,Consumer Cyclical,CN,-53.04,discretionary trim: worst performer; underlying +8% against thesis over 5 days
 2026-07-01,open,PFE,put,24,2026-08-21,1,0.99,-99.04,11.2,33,-0.47,29,2.0,14112,UPTREND,Healthcare,US,,cleanest put entry (2% spread / 28% IV); $0.01 price improvement
 2026-07-01,open,KDP,call,33,2026-08-21,1,1.70,-170.04,12.50,68,0.59,28,9.0,3056,UPTREND,Consumer Defensive,US,,first call — calls enabled by user override; bullish counterweight to put book
+2026-07-02,close,JD,put,26,2026-08-21,1,1.23,123.00,,,,,,,UPTREND,Consumer Cyclical,CN,-55.04,discretionary trim (BILI pattern): laggard -29%, delta decayed -.52->-.42, stock rose against thesis toward 50-DMA on a down-tape day; frees China-bearish slot
