@@ -119,13 +119,36 @@ aggregate cap (G7: $2,000 / 6 positions).
   nominal strikes/premiums) are **priors**. They are logged on every scan (§9)
   so the calibration loop can re-derive them from realized outcomes.
 
-## Logging & calibration (spec §9)
+## Logging, trade journal & calibration (spec §9)
 
-Every candidate on every scan is appended to a JSONL log (`--log`), not just
-taken trades — the row schema matches §9a. That record is the substrate for the
-weekly/monthly calibration loop (POP Brier score, score-bucket attribution,
-per-pillar logistic re-fit once ≥ 100 outcomes, regime/strategy and execution
-audits). Fill / exit / PnL fields are appended per §9a when a trade is taken.
+Two layers close the feedback loop:
+
+**Predictions tape (`--log`).** Every candidate on every scan is appended to a
+JSONL log (§9a schema) — not just taken trades. Immutable record of what the
+model predicted.
+
+**Trade journal / ledger (`--journal`).** A JSON ledger that tracks outcomes:
+- **shadow** trades — every GO plus any GO-worthy setup (composite ≥ GO, EV > 0)
+  blocked *only* by the risk caps G6/G7 ("would we have won if we could afford
+  it"). Recorded automatically during a scan.
+- **taken** trades — reconciled from Robinhood fills (`reconcile_taken`),
+  annotatable, so realized PnL + slippage feed calibration.
+
+Open entries are **resolved** by re-pricing their exact legs against the live
+chain (`journal resolve`) → paper/real PnL and a win/loss/scratch outcome. Each
+leg's entry NBBO mid is captured at flag time so resolution is a true
+mark-to-market of the same contracts.
+
+```bash
+python -m options_scanner.cli scan --journal runs/ledger.json     # record shadows
+python -m options_scanner.cli journal resolve --journal runs/ledger.json  # re-price due entries
+python -m options_scanner.cli journal report  --journal runs/ledger.json  # calibration report
+```
+
+**Calibration report (§9b)** turns resolved entries into a **Brier score** on
+predicted POP, **win-rate + avg PnL by composite bucket** (is WATCH winning as
+often as GO?), a **regime × structure audit**, and a slippage summary. Once
+≥ 100 outcomes accrue, the pillar weights can be re-fit from *your* results.
 
 ## Tests
 
@@ -153,9 +176,11 @@ options_scanner/
       structure_chain.py   # §7 realize structures from the live chain
       rank.py              # §6b decisions + tiered sizing
       readout.py           # §8 three-section readout
-      logbook.py           # §9 candidate logging
+      logbook.py           # §9a candidate predictions tape (JSONL)
+    journal.py             # §9 trade ledger: shadow + taken, live-chain resolution
+    calibration.py         # §9b Brier / bucket attribution / regime audit
     scanner.py             # orchestrator
-    cli.py                 # `python -m options_scanner.cli scan`
+    cli.py                 # scan + journal subcommands
   tests/
 ```
 

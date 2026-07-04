@@ -41,6 +41,7 @@ class ScanResult:
     evaluated: list[EvaluatedCandidate] = field(default_factory=list)
     readout: str = ""
     rows_logged: int = 0
+    shadows_recorded: int = 0
 
 
 class Scanner:
@@ -95,6 +96,7 @@ class Scanner:
         tickers: list[str] | None = None,
         context: dict[str, Any] | None = None,
         log_path: str | None = None,
+        journal_path: str | None = None,
         now: datetime | None = None,
     ) -> ScanResult:
         now = now or datetime.now(timezone.utc)
@@ -144,9 +146,19 @@ class Scanner:
                 evaluated, scan_id=scan_id, timestamp=timestamp, log_path=log_path
             )
 
+        shadows_recorded = 0
+        if journal_path:
+            from .journal import Ledger, record_shadows
+            ledger = Ledger.load(journal_path)
+            shadows_recorded = record_shadows(
+                ledger, evaluated, scan_id=scan_id, config=self.config, now=now
+            )
+            ledger.save()
+
         return ScanResult(
             scan_id=scan_id, timestamp=timestamp,
             evaluated=evaluated, readout=readout, rows_logged=rows_logged,
+            shadows_recorded=shadows_recorded,
         )
 
     def _universe(self, tickers: list[str] | None):

@@ -190,6 +190,7 @@ class Leg:
     option_type: str     # "call" | "put"
     strike: float
     expiry: str          # ISO date
+    mid: float | None = None  # NBBO mid at entry (for later re-pricing / PnL)
 
     def __str__(self) -> str:
         sign = "+" if self.action == "buy" else "-"

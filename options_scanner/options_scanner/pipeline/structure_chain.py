@@ -59,7 +59,7 @@ def _long(plan, chain: OptionChain, ceiling: float) -> Structure | None:
     be = c.strike + c.mid if plan.call else c.strike - c.mid
     return Structure(
         structure_type=StructureType.LONG_CALL if plan.call else StructureType.LONG_PUT,
-        legs=[Leg("buy", opt, c.strike, c.expiry)],
+        legs=[Leg("buy", opt, c.strike, c.expiry, mid=c.mid)],
         max_profit=round(premium * _LONG_TARGET_RR, 2),
         max_loss=round(premium, 2),
         breakevens=[round(be, 2)],
@@ -83,7 +83,7 @@ def _leaps(plan, chain: OptionChain, ceiling: float) -> Structure | None:
     be = c.strike + c.mid if plan.call else c.strike - c.mid
     return Structure(
         structure_type=StructureType.LEAPS,
-        legs=[Leg("buy", opt, c.strike, c.expiry)],
+        legs=[Leg("buy", opt, c.strike, c.expiry, mid=c.mid)],
         max_profit=round(premium * _LEAPS_TARGET_RR, 2),
         max_loss=round(premium, 2),
         breakevens=[round(be, 2)],
@@ -194,14 +194,14 @@ def _vertical(
 
     if credit:
         legs = [
-            Leg("sell", opt, r.short.strike, r.short.expiry),
-            Leg("buy", opt, r.long.strike, r.long.expiry),
+            Leg("sell", opt, r.short.strike, r.short.expiry, mid=r.short.mid),
+            Leg("buy", opt, r.long.strike, r.long.expiry, mid=r.long.mid),
         ]
         short_delta = abs(r.short.delta) if r.short.delta is not None else None
     else:
         legs = [
-            Leg("buy", opt, r.long.strike, r.long.expiry),
-            Leg("sell", opt, r.short.strike, r.short.expiry),
+            Leg("buy", opt, r.long.strike, r.long.expiry, mid=r.long.mid),
+            Leg("sell", opt, r.short.strike, r.short.expiry, mid=r.short.mid),
         ]
         # For a debit, prob-of-profit tracks the long leg's delta (prob ITM).
         short_delta = abs(r.long.delta) if r.long.delta is not None else None
@@ -233,10 +233,10 @@ def _condor(chain: OptionChain, ceiling: float, rationale: str) -> Structure | N
     if put_leg is None or call_leg is None:
         return None
     legs = [
-        Leg("sell", "put", put_leg.short.strike, put_leg.short.expiry),
-        Leg("buy", "put", put_leg.long.strike, put_leg.long.expiry),
-        Leg("sell", "call", call_leg.short.strike, call_leg.short.expiry),
-        Leg("buy", "call", call_leg.long.strike, call_leg.long.expiry),
+        Leg("sell", "put", put_leg.short.strike, put_leg.short.expiry, mid=put_leg.short.mid),
+        Leg("buy", "put", put_leg.long.strike, put_leg.long.expiry, mid=put_leg.long.mid),
+        Leg("sell", "call", call_leg.short.strike, call_leg.short.expiry, mid=call_leg.short.mid),
+        Leg("buy", "call", call_leg.long.strike, call_leg.long.expiry, mid=call_leg.long.mid),
     ]
     total_credit = put_leg.max_profit + call_leg.max_profit
     max_loss = max(put_leg.max_loss, call_leg.max_loss) - min(put_leg.max_profit, call_leg.max_profit)
