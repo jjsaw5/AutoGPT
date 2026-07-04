@@ -62,6 +62,12 @@ scoring:
   go_threshold: 72
   watch_threshold: 58
 
+market_context:
+  enabled: true                    # cross-asset risk-on/off regime (once per scan)
+  max_composite_adjustment: 5      # +/- points a fully-aligned/opposed regime nudges composite
+  # A bullish thesis in a risk-off tape is penalized (and vice versa); set the
+  # adjustment to 0 to make the regime advisory-only (readout note, no score change).
+
 structure:
   ivr_cheap_max: 30               # IV rank <= this => "cheap" (buy premium)
   ivr_rich_min: 50                # IV rank >= this => "rich" (sell premium)

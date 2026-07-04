@@ -30,6 +30,7 @@ from .pipeline import (
     select_structure,
 )
 from .pipeline.chain import build_chain
+from .market_context import build_market_regime
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ class ScanResult:
     readout: str = ""
     rows_logged: int = 0
     shadows_recorded: int = 0
+    regime: Any = None
 
 
 class Scanner:
@@ -109,6 +111,11 @@ class Scanner:
         if self.uw:
             self.uw.clear_cache()
 
+        # Market-wide regime — computed once per scan, shared across candidates.
+        regime = None
+        if self.config.market_context.get("enabled", True) and self.fmp is not None:
+            regime = build_market_regime(self.fmp, now=now)
+
         candidates = self._universe(tickers)
         logger.info("Universe: %d candidates", len(candidates))
 
@@ -137,8 +144,8 @@ class Scanner:
                 )
             )
 
-        rank_and_decide(evaluated, self.config)
-        readout = render_readout(evaluated, self.config, context=context)
+        rank_and_decide(evaluated, self.config, regime=regime)
+        readout = render_readout(evaluated, self.config, context=context, regime=regime)
 
         rows_logged = 0
         if log_path:
@@ -158,7 +165,7 @@ class Scanner:
         return ScanResult(
             scan_id=scan_id, timestamp=timestamp,
             evaluated=evaluated, readout=readout, rows_logged=rows_logged,
-            shadows_recorded=shadows_recorded,
+            shadows_recorded=shadows_recorded, regime=regime,
         )
 
     def _universe(self, tickers: list[str] | None):

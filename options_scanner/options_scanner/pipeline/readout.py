@@ -19,6 +19,7 @@ def render_readout(
     config: Config,
     *,
     context: dict[str, Any] | None = None,
+    regime=None,
 ) -> str:
     ctx = context or {}
     spec_bar = float(config.speculative.get("quality_bar_min_composite", 75))
@@ -35,6 +36,13 @@ def render_readout(
     lines.append("=" * 78)
     lines.append("OPTIONS OPPORTUNITY SCANNER — READOUT   (recommend-only; human confirms)")
     lines.append("=" * 78)
+
+    if regime is not None:
+        infl = " ⚠inflationary" if getattr(regime, "inflationary_flag", False) else ""
+        lines.append(
+            f"MARKET REGIME: {regime.regime} · composite {regime.composite:+.2f} · "
+            f"macro {regime.macro_score:+d} ({regime.macro_label}){infl}"
+        )
 
     # --- Section 1: core book -------------------------------------------------
     lines.append("\n[1] CORE BOOK  (GO first, then WATCH)")
@@ -82,10 +90,12 @@ def _render_row(
     be = "/".join(f"{b:g}" for b in ec.structure.breakevens) or "—"
     size = f"${ec.suggested_size:.0f} ({ec.size_tier})" if ec.suggested_size else "—"
 
+    comp = f"composite {s.composite:.1f}"
+    if ec.regime_adj:
+        comp += f"{ec.regime_adj:+.0f} macro → {ec.effective_composite:.1f}"
     header = (
         f"  #{rank} {ec.ticker} [{cap}/T{ec.candidate.tier.value}] "
-        f"{ec.structure.structure_type.value}  →  {ec.decision.value}  "
-        f"(composite {s.composite:.1f})"
+        f"{ec.structure.structure_type.value}  →  {ec.decision.value}  ({comp})"
     )
     return [
         header,

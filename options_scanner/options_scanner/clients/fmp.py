@@ -68,6 +68,37 @@ class FMPClient:
             return []
         return data if isinstance(data, list) else []
 
+    def historical_closes(self, symbol: str, *, limit: int = 300) -> list[float]:
+        """Daily closes oldest→newest (FMP returns newest-first; we reverse)."""
+        try:
+            data = self._get(
+                "/stable/historical-price-eod/light", {"symbol": symbol}
+            )
+        except HTTPError as exc:
+            logger.warning("FMP historical(%s) failed: %s", symbol, exc)
+            return []
+        if not isinstance(data, list):
+            return []
+        closes = [
+            float(row["price"])
+            for row in reversed(data)
+            if isinstance(row, dict) and row.get("price") is not None
+        ]
+        return closes[-limit:]
+
+    def treasury_spread(self) -> float | None:
+        """Latest 10Y − 2Y treasury yield spread (percentage points)."""
+        try:
+            data = self._get("/stable/treasury-rates", {})
+        except HTTPError as exc:
+            logger.warning("FMP treasury-rates failed: %s", exc)
+            return None
+        rows = data if isinstance(data, list) else [data]
+        for row in rows:  # newest first
+            if isinstance(row, dict) and row.get("year10") is not None and row.get("year2") is not None:
+                return round(float(row["year10"]) - float(row["year2"]), 3)
+        return None
+
     # --- normalized convenience ------------------------------------------------
     def snapshot(self, symbol: str) -> dict[str, Any]:
         """Merged profile + quote snapshot with normalized keys."""

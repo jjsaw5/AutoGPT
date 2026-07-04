@@ -90,6 +90,10 @@ class Config:
         return self.section("data")
 
     @property
+    def market_context(self) -> dict[str, Any]:
+        return self.section("market_context")
+
+    @property
     def weights(self) -> dict[str, float]:
         w = self.scoring.get("weights", {})
         return {k: float(v) for k, v in w.items()}

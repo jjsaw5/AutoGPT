@@ -8,26 +8,47 @@ sizes GO candidates within the tiered risk caps, and attaches a one-line
 from __future__ import annotations
 
 from ..config import Config
-from ..models import Decision, EvaluatedCandidate, StructureType, VolRegime
+from ..models import Decision, Direction, EvaluatedCandidate, StructureType, VolRegime
 
 _SELL_PREMIUM = {StructureType.CREDIT_VERTICAL, StructureType.IRON_CONDOR}
 
 
 def rank_and_decide(
-    evaluated: list[EvaluatedCandidate], config: Config
+    evaluated: list[EvaluatedCandidate], config: Config, *, regime=None
 ) -> list[EvaluatedCandidate]:
     if not evaluated:
         return []
 
     _normalize_pool_ev(evaluated, config)
 
+    max_adj = float(config.market_context.get("max_composite_adjustment", 0))
+    for ec in evaluated:
+        _apply_regime(ec, regime, max_adj)
+
     go = config.go_threshold
     watch = config.watch_threshold
     for ec in evaluated:
         _decide(ec, go, watch, config)
 
-    evaluated.sort(key=lambda ec: (_decision_order(ec.decision), -ec.score.composite))
+    evaluated.sort(key=lambda ec: (_decision_order(ec.decision), -ec.effective_composite))
     return evaluated
+
+
+def _apply_regime(ec: EvaluatedCandidate, regime, max_adj: float) -> None:
+    """Nudge the composite when the thesis aligns with / fights the market regime.
+
+    Bullish thesis in a risk-on tape (or bearish in risk-off) gets a bonus;
+    fighting the regime gets a penalty, scaled by how strong the regime is.
+    """
+    if regime is None or max_adj <= 0:
+        return
+    tdir = 1 if ec.thesis.direction == Direction.BULLISH else (
+        -1 if ec.thesis.direction == Direction.BEARISH else 0)
+    mdir = regime.direction
+    if tdir == 0 or mdir == 0:
+        return
+    strength = min(1.0, abs(regime.composite) / 0.5)
+    ec.regime_adj = round(tdir * mdir * max_adj * strength, 1)
 
 
 def _decision_order(decision: Decision) -> int:
@@ -60,7 +81,7 @@ def _normalize_pool_ev(evaluated: list[EvaluatedCandidate], config: Config) -> N
 def _decide(
     ec: EvaluatedCandidate, go: float, watch: float, config: Config
 ) -> None:
-    composite = ec.score.composite
+    composite = ec.effective_composite
     gates_pass = ec.gates.passed
     ev_positive = ec.score.expected_value > 0
 
@@ -87,7 +108,7 @@ def _size(ec: EvaluatedCandidate, go: float, config: Config) -> None:
     standard = float(acct.get("risk_standard_max", 200))
     high = float(acct.get("risk_high_conviction_max", 500))
 
-    composite = ec.score.composite
+    composite = ec.effective_composite
     fraction = min(1.0, (composite - go) / max(1.0, 100.0 - go))
     # High-conviction ceiling reserved for top-decile composite.
     ceiling = high if composite >= 85 else standard
@@ -120,6 +141,8 @@ def _why(ec: EvaluatedCandidate) -> str:
 
 def _biggest_risk(ec: EvaluatedCandidate) -> str:
     t = ec.thesis
+    if ec.regime_adj < 0:
+        return f"Fights the market regime (macro nudge {ec.regime_adj:+.0f})."
     if t.is_earnings_play:
         return "Earnings binary — IV crush / gap through the spread."
     if t.vol_regime == VolRegime.CHEAP and ec.structure.structure_type.value.startswith("long"):

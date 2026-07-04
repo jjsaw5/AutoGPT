@@ -232,11 +232,17 @@ class EvaluatedCandidate:
     size_tier: str = "none"          # "standard" | "high_conviction" | "none"
     why: str = ""                    # one-line "why this trade"
     biggest_risk: str = ""
+    regime_adj: float = 0.0          # market-regime nudge applied to the composite
 
     @property
     def ticker(self) -> str:
         return self.candidate.ticker
 
     @property
+    def effective_composite(self) -> float:
+        """Pillar composite plus the market-regime adjustment (decision basis)."""
+        return round(self.score.composite + self.regime_adj, 1)
+
+    @property
     def rank_key(self) -> float:
-        return self.score.composite
+        return self.effective_composite

@@ -92,6 +92,23 @@ for ec in result.evaluated:
     print(ec.ticker, ec.decision.value, ec.score.composite, ec.suggested_size)
 ```
 
+## Market regime (cross-asset risk-on / risk-off)
+
+Computed **once per scan** (market-wide, not per-ticker) from cross-asset ETF
+ratios — concentration (RSP/SPY), credit (HYG/LQD), size (IWM/SPY), equity-bond
+(SPY/TLT), sector rotation (XLY/XLP), and the 10Y-2Y treasury spread — into a
+composite in [−1, +1], a regime label, and a −2..+2 macro score. A thesis that
+**fights the regime** (bullish in a risk-off tape, or vice versa) has its
+composite nudged down; one that aligns is nudged up, scaled by regime strength
+(`market_context.max_composite_adjustment`, set to 0 for advisory-only). The
+regime is surfaced at the top of the readout. This guards against directional
+concentration — e.g. an all-bullish book in a risk-off market.
+
+*Adapted from the cross-asset macro pillar in
+[Oft3r/agentic-trading-desk](https://github.com/Oft3r/agentic-trading-desk)
+(MIT) — component set, weights, and regime cascade — reimplemented here and fed
+from FMP historical closes + treasury rates.*
+
 ## Decision rules
 
 A candidate is **GO** only when **all three** hold (spec §6b): composite
@@ -177,6 +194,7 @@ options_scanner/
       rank.py              # §6b decisions + tiered sizing
       readout.py           # §8 three-section readout
       logbook.py           # §9a candidate predictions tape (JSONL)
+    market_context.py      # cross-asset risk-on/off regime (once per scan)
     journal.py             # §9 trade ledger: shadow + taken, live-chain resolution
     calibration.py         # §9b Brier / bucket attribution / regime audit
     scanner.py             # orchestrator
