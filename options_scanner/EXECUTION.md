@@ -33,19 +33,27 @@ trade, or approve a specific trade the agent proposed.** That's it.
 ## Capability limits (what the agent CAN actually place)
 
 The Robinhood MCP places **single-leg options only** — Level 2 strategies: long
-calls/puts, covered calls, cash-secured puts. It **cannot place multi-leg
-structures** (spreads, iron condors, butterflies) — those are Robinhood-app-only,
-and require a **Level 3** account.
+calls/puts, covered calls, cash-secured puts. It **cannot place ANY multi-leg
+order** — not a 4-leg iron condor, and not even a **2-leg vertical spread**.
+Multi-leg orders are Robinhood-app-only and need a **Level 3** account.
+
+**Do NOT leg into a spread via single-leg orders.** Selling one leg before its
+protective wing is on leaves a **naked short** (unbounded risk). That is
+prohibited — spreads go on as one atomic multi-leg order (in the app) or not at
+all.
+
+Robinhood has **no iron-condor preset**. A condor is placed as **two separate
+credit-spread orders** — a Put Credit Spread + a Call Credit Spread — each of
+which is a Level-3, app-only, multi-leg order. So a condor is always fully
+manual.
 
 Consequence for this book:
-- ✅ Agent-placeable: a **single-leg** trade (e.g. a long call/put) in the
-  **Agentic** account (Level 2, agentic-enabled).
-- ❌ NOT agent-placeable: **any spread/condor/straddle** — most of what the
-  scanner surfaces. Multi-leg trades are **manual**, in the Robinhood app, in a
-  Level-3 account (your Individual account). The agent gives you the ticket.
-
-So "the agent can place trades now" means single-leg, in the Agentic account.
-Multi-leg structures still route to you.
+- ✅ Agent-placeable: a **single-leg** trade (long call/put, covered call,
+  cash-secured put) in the **Agentic** account (Level 2, agentic-enabled).
+- ❌ NOT agent-placeable: **any spread, condor, or straddle** — i.e. most of
+  what the scanner surfaces. These are **manual**, in the Robinhood app, in a
+  Level-3 account (the Individual account). The agent hands over the ticket and
+  logs the fill afterward.
 
 ## Account constraint (important)
 
