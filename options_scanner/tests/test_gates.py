@@ -103,6 +103,34 @@ def test_g3_micro_requires_override(config):
     assert g3b.passed or "override" not in g3b.detail
 
 
+def test_g12_blocks_over_correlated_direction(config):
+    # account $5k, max_correlated 15% = $750. Existing $600 bullish + new $300 > cap.
+    c = make_candidate(sector="Technology")
+    t = _thesis(direction=Direction.BULLISH)
+    ctx = {"open_exposure": [
+        {"sector": "Energy", "direction": "bullish", "risk": 600},
+    ]}
+    report = evaluate_gates(c, t, _long_call(max_loss=300), config, context=ctx)
+    g12 = next(r for r in report.results if r.gate_id == "G12")
+    assert not g12.passed  # 600 same-direction + 300 new = 900 > 750
+
+
+def test_g12_passes_under_cap(config):
+    c = make_candidate(sector="Technology")
+    t = _thesis(direction=Direction.BULLISH)
+    ctx = {"open_exposure": [{"sector": "Energy", "direction": "bearish", "risk": 300}]}
+    report = evaluate_gates(c, t, _long_call(max_loss=300), config, context=ctx)
+    g12 = next(r for r in report.results if r.gate_id == "G12")
+    assert g12.passed  # opposite direction, different sector => no cluster
+
+
+def test_g12_defers_without_exposure(config):
+    c = make_candidate()
+    report = evaluate_gates(c, _thesis(), _long_call(), config)
+    g12 = next(r for r in report.results if r.gate_id == "G12")
+    assert g12.passed and "deferred" in g12.detail
+
+
 def test_g8_stale_data_blocks(config):
     c = make_candidate()
     report = evaluate_gates(c, _thesis(), _long_call(), config, context={"data_stale": True})

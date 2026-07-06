@@ -77,6 +77,7 @@ def evaluate_gates(
         _g9_assignment_risk(candidate, structure, g, ctx),
         _g10_intraday_margin(structure, g, ctx),
         _g11_exit_plan(structure, ctx),
+        _g12_correlation(candidate, thesis, structure, config, ctx),
     ]
     return GateReport(results=results)
 
@@ -241,6 +242,33 @@ def _dte(expiry_iso: str) -> int | None:
     except (ValueError, TypeError):
         return None
     return (exp - datetime.now(timezone.utc).date()).days
+
+
+def _g12_correlation(candidate, thesis, structure, config, ctx) -> GateResult:
+    """Don't pile correlated risk onto an already-concentrated book.
+
+    ``ctx['open_exposure']`` is a list of open positions:
+    ``{sector, direction, risk}``. A new trade's cluster is other open risk in
+    the SAME direction (net long/short exposure) or the SAME sector. If the
+    cluster + this trade exceeds the correlated-risk cap, block it.
+    """
+    exposure = ctx.get("open_exposure")
+    if not exposure:
+        return GateResult("G12", True, "deferred: no open-exposure data")
+    new_risk = structure.max_loss or 0.0
+    new_dir = thesis.direction.value
+    new_sector = candidate.sector
+    same_dir = sum(e.get("risk", 0) for e in exposure if e.get("direction") == new_dir and new_dir != "neutral")
+    same_sec = sum(e.get("risk", 0) for e in exposure if new_sector and e.get("sector") == new_sector)
+    cluster = max(same_dir, same_sec)
+    cap = config.max_correlated_risk()
+    if cluster + new_risk > cap:
+        kind = "direction" if same_dir >= same_sec else "sector"
+        return GateResult(
+            "G12", False,
+            f"correlated {kind} risk ${cluster + new_risk:.0f} > cap ${cap:.0f}",
+        )
+    return GateResult("G12", True, f"correlated risk ${cluster + new_risk:.0f}/{cap:.0f}")
 
 
 def _g11_exit_plan(structure, ctx) -> GateResult:

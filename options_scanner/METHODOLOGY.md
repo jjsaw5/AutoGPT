@@ -192,8 +192,10 @@ straddle reward:risk target = 1.3× (LEAPS 1.5×). ⚠ Priors.
 | G9 | short leg ITM within 2 days of expiry → close-only | live chain |
 | G10 | intraday margin deficit ≤ $250 (non-binding for defined-risk) | context |
 | **G11** | **no complete exit plan (target + stop + invalidation) → no trade** | exit engine (§13) |
+| **G12** | **correlated (same-direction or same-sector) open risk + new ≤ 15% of account** | context / open positions |
 
-Gates needing live-chain data (G2, G9) *defer* when no chain is available.
+Gates needing live-chain data (G2, G9) or open-position context (G12) *defer*
+when that data isn't supplied.
 
 ---
 
@@ -313,8 +315,8 @@ contract_vol_min 100 / spread_max_pct 0.10 / 0.05 (0DTE) ·
   shadow trades showing positive expectancy. *This is the real gate to live capital.*
 - **Global weights** — a MEGA credit spread and a SMALL long call score on the same
   curve. Strategy-specific scoring is deferred until there's shadow data to fit it.
-- **No correlation / event-clustering gate** — open positions aren't checked for
-  overlap.
+- **No *event*-clustering gate** — G12 covers direction/sector correlation, but
+  positions clustered around the same catalyst date aren't yet checked.
 - **Missing vol/market data** — VIX level, IV percentile, IV/HV, skew, VVIX, MOVE,
   breadth; and ATR/ADX (need OHLC). A selective subset is the next data add.
 - **Taken-trade auto-capture** depends on the Robinhood MCP (agent-driven).

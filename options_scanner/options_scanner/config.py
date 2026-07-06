@@ -118,6 +118,10 @@ class Config:
     def max_open_risk(self) -> float:
         return self._risk_dollars("max_open_pct", "max_open_risk", 2000)
 
+    def max_correlated_risk(self) -> float:
+        pct = self.account.get("max_correlated_pct", 0.15)
+        return round(self.account_size * float(pct), 2)
+
     def max_positions(self) -> int:
         return int(self.account.get("max_positions", 6))
 
