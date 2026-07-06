@@ -110,10 +110,17 @@ def enrich_candidate(
         candidate.sector = snap.get("sector")
         candidate.price = snap.get("price")
         candidate.cap_tier = CapTier.from_market_cap(snap.get("market_cap"))
-        earnings = fmp.earnings_calendar(candidate.ticker, limit=8)
-        signals["days_to_earnings"] = _days_to_next_earnings(
-            earnings, datetime.now(timezone.utc).date()
-        )
+        earnings = fmp.earnings_calendar(candidate.ticker, limit=12)
+        today = datetime.now(timezone.utc).date()
+        signals["days_to_earnings"] = _days_to_next_earnings(earnings, today)
+        # Past earnings dates + dated closes → independent expected-move model.
+        signals["earnings_past"] = [
+            str(r.get("date"))[:10] for r in earnings
+            if r.get("date") and str(r.get("date"))[:10] < today.isoformat()
+        ]
+        series = fmp.historical_series(candidate.ticker, limit=120)
+        signals["closes_dated"] = series
+        signals["closes"] = [r["close"] for r in series]
 
     if uw is not None:
         ivr = uw.iv_rank(candidate.ticker)

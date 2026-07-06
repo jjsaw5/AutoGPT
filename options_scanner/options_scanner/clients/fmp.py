@@ -68,8 +68,8 @@ class FMPClient:
             return []
         return data if isinstance(data, list) else []
 
-    def historical_closes(self, symbol: str, *, limit: int = 300) -> list[float]:
-        """Daily closes oldest→newest (FMP returns newest-first; we reverse)."""
+    def historical_series(self, symbol: str, *, limit: int = 300) -> list[dict[str, Any]]:
+        """Dated daily closes oldest→newest: [{date, close}, ...]."""
         try:
             data = self._get(
                 "/stable/historical-price-eod/light", {"symbol": symbol}
@@ -79,12 +79,16 @@ class FMPClient:
             return []
         if not isinstance(data, list):
             return []
-        closes = [
-            float(row["price"])
-            for row in reversed(data)
+        rows = [
+            {"date": str(row.get("date"))[:10], "close": float(row["price"])}
+            for row in reversed(data)  # FMP is newest-first
             if isinstance(row, dict) and row.get("price") is not None
         ]
-        return closes[-limit:]
+        return rows[-limit:]
+
+    def historical_closes(self, symbol: str, *, limit: int = 300) -> list[float]:
+        """Daily closes oldest→newest."""
+        return [r["close"] for r in self.historical_series(symbol, limit=limit)]
 
     def treasury_spread(self) -> float | None:
         """Latest 10Y − 2Y treasury yield spread (percentage points)."""

@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..config import Config
+from ..expected_move import estimate_expected_move
 from ..models import (
     Candidate,
     Catalyst,
@@ -21,6 +22,18 @@ from ..models import (
     Thesis,
     VolRegime,
 )
+
+# Representative days-to-expiry per horizon, for the expected-move window.
+_HORIZON_DTE = {
+    Horizon.INTRADAY: 1,
+    Horizon.SWING: 7,
+    Horizon.POSITION: 30,
+    Horizon.LEAPS: 180,
+}
+
+
+def _horizon_dte(horizon: Horizon) -> int:
+    return _HORIZON_DTE.get(horizon, 7)
 
 
 def _signed_premium(signals: dict[str, Any]) -> float:
@@ -136,20 +149,20 @@ def build_thesis(candidate: Candidate, config: Config) -> Thesis:
     horizon = _pick_horizon(days_to_catalyst)
 
     # --- Implied vs expected move ---------------------------------------------
-    # Both must be same-horizon fractions of spot to be comparable. The implied
-    # move comes from the nearest term-structure expiry; the expected move is a
-    # conviction-scaled version of it (high conviction => expect > implied, which
-    # is what justifies long premium). If no implied move is available, fall back
-    # to realized vol de-annualized to a ~1-month horizon. Placeholder heuristic
-    # to be calibrated against logged outcomes (§9).
-    implied_move = _nearest_implied_move(signals.get("term_structure", []))
-    if implied_move is not None:
-        expected_move = round(implied_move * (0.6 + 0.9 * conviction), 4)
-    elif rv or iv:
-        monthly = (rv or iv) * 0.29  # ~sqrt(21/252) de-annualization
-        expected_move = round(monthly * (0.5 + conviction), 4)
-    else:
-        expected_move = None
+    # Implied move (what the market prices) vs an INDEPENDENT expected move
+    # (what realized vol / historical earnings moves imply) — deliberately NOT
+    # derived from conviction, so confidence can't manufacture fake edge.
+    horizon_dte = _horizon_dte(horizon)
+    implied_move = _implied_move_at(signals.get("term_structure", []), horizon_dte)
+    expected_move = estimate_expected_move(
+        signals.get("closes", []),
+        horizon_dte,
+        is_earnings=(catalyst == Catalyst.EARNINGS),
+        series_dated=signals.get("closes_dated"),
+        past_earnings_dates=signals.get("earnings_past"),
+    )
+    if expected_move is None and (rv or iv):  # fallback when no price history
+        expected_move = round((rv or iv) * (horizon_dte / 252) ** 0.5, 4)
 
     return Thesis(
         direction=direction,
@@ -213,10 +226,14 @@ def _pick_horizon(days_to_catalyst: int | None) -> Horizon:
     return Horizon.LEAPS
 
 
-def _nearest_implied_move(term_structure: list[dict[str, Any]]) -> float | None:
-    """Nearest non-0DTE implied move (fraction of spot) from the term structure."""
+def _implied_move_at(term_structure: list[dict[str, Any]], target_dte: int) -> float | None:
+    """Implied move (fraction of spot) at the expiry closest to `target_dte`.
+
+    Matching the implied horizon to the thesis horizon keeps the implied-vs-
+    expected comparison apples-to-apples (both cover ~the same number of days).
+    """
     best: float | None = None
-    best_dte = None
+    best_gap = None
     for row in term_structure:
         try:
             dte = int(row.get("dte"))
@@ -225,7 +242,8 @@ def _nearest_implied_move(term_structure: list[dict[str, Any]]) -> float | None:
             continue
         if dte < 1:
             continue
-        if best_dte is None or dte < best_dte:
-            best_dte = dte
+        gap = abs(dte - target_dte)
+        if best_gap is None or gap < best_gap:
+            best_gap = gap
             best = move
     return round(best, 4) if best is not None else None
