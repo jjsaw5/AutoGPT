@@ -49,6 +49,10 @@ def render_readout(
     core_book = [ec for ec in core if ec.decision in (Decision.GO, Decision.WATCH)]
     if not core_book:
         lines.append("  (no GO/WATCH candidates this scan)")
+    else:
+        # Compact table first (parallels the position-review table), detail below.
+        lines.extend(_render_candidate_table(core_book, config))
+        lines.append("")
     for rank, ec in enumerate(core_book, 1):
         lines.extend(_render_row(rank, ec))
 
@@ -72,6 +76,54 @@ def render_readout(
     lines.append("\n" + "-" * 78)
     lines.append("Not investment advice. Every GO is a hypothesis to validate (§9).")
     return "\n".join(lines)
+
+
+# Structures that are sold for a credit (entry = credit received); the rest are
+# bought for a debit (entry = premium paid).
+_CREDIT_STRUCTURES = {
+    StructureType.CREDIT_VERTICAL, StructureType.IRON_CONDOR,
+}
+
+
+def _entry_short(ec: EvaluatedCandidate) -> str:
+    """Compact entry cost: '$400 db' (debit paid) or '$300 cr' (credit taken)."""
+    s = ec.structure
+    if s.structure_type in _CREDIT_STRUCTURES:
+        amt = s.max_profit
+        return f"${amt:.0f} cr" if amt is not None else "—"
+    amt = s.max_loss
+    return f"${amt:.0f} db" if amt is not None else "—"
+
+
+def _candidate_note(ec: EvaluatedCandidate, go: float) -> str:
+    """Why it isn't a GO (or 'GO'): bad pricing, failed gates, or score gap."""
+    if ec.structure.max_loss is not None and ec.structure.max_loss <= 0:
+        return "⚠ bad pricing"
+    failed = [r.gate_id for r in ec.gates.failures]
+    if failed:
+        return "gated " + ",".join(failed)
+    if ec.decision == Decision.GO:
+        return "GO ✓"
+    return f"score {ec.effective_composite:.0f}<{go:.0f}"
+
+
+def _render_candidate_table(core_book: list[EvaluatedCandidate], config: Config) -> list[str]:
+    """Compact one-line-per-candidate table — the new-position analogue of the
+    position-review table. Detail rows follow below it."""
+    go = float(config.go_threshold)
+    header = (f"  {'#':<2} {'TICKER':<6} {'STRUCTURE':<15} {'DEC':<5} "
+              f"{'COMP':>5} {'POP':>4} {'EV':>7} {'ENTRY':>9}  NOTE")
+    rows = [header, "  " + "-" * (len(header) - 2)]
+    for rank, ec in enumerate(core_book, 1):
+        s, t = ec.score, ec.thesis
+        pop = f"{s.pop:.0%}" if s.pop is not None else "—"
+        ev = f"${s.expected_value:.0f}" if s.expected_value is not None else "—"
+        rows.append(
+            f"  {rank:<2} {ec.ticker:<6} {ec.structure.structure_type.value:<15} "
+            f"{ec.decision.value:<5} {ec.effective_composite:>5.1f} {pop:>4} "
+            f"{ev:>7} {_entry_short(ec):>9}  {_candidate_note(ec, go)}"
+        )
+    return rows
 
 
 def _render_row(

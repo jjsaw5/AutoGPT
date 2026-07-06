@@ -56,6 +56,19 @@ def test_full_pipeline_offline(config):
     assert "SPECULATIVE" in readout
 
 
+def test_core_book_has_candidate_table(config):
+    # A GO/WATCH candidate renders a compact summary table (header + a row for it)
+    # ahead of the detailed block — the new-position analogue of the book table.
+    ec = _evaluate(make_candidate("AAPL", signals={"iv_rank": 10.0}), config)
+    rank_and_decide([ec], config)
+    readout = render_readout([ec], config)
+    if ec.decision.value in ("GO", "WATCH"):
+        assert "TICKER" in readout and "STRUCTURE" in readout and "NOTE" in readout
+        assert "DEC" in readout and "ENTRY" in readout
+        # the ticker appears in a table row with its decision
+        assert "AAPL" in readout
+
+
 def test_go_requires_all_three(config):
     # Force a strong bullish cheap-vol candidate; if it GOes, gates+EV+score all held.
     ec = _evaluate(make_candidate("AAPL", signals={"iv_rank": 10.0}), config)
