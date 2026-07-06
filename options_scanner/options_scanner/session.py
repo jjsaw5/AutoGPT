@@ -177,7 +177,7 @@ class SessionRunner:
         # session own history writing (history_dir=None here) so candidates and
         # reviews land together under one scan_id.
         scan = self.scanner.scan(
-            extra_tickers=held, context=context,
+            extra_tickers=held, held_tickers=held, context=context,
             journal_path=journal_path, now=now,
         )
         by_ticker = {ec.ticker: ec for ec in scan.evaluated}

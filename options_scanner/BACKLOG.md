@@ -56,9 +56,17 @@ just delete) as they ship. Priority is a rough guide, not a promise.*
 - [ ] **Vol-surface data → P1** *(high value; adds priors).* IV **percentile**
   (vs IV rank), **IV/HV** ratio, **skew** (put vs call), **term-structure slope**.
   Improves the highest-weighted pillar. Needs UW endpoint verification.
+- [x] **Catalyst engine — awareness layer** *(shipped).* CATALYST RADAR in the
+  readout: upcoming earnings (reused from theses — no extra calls), curated
+  macro (FOMC/CPI/NFP in `macro_calendar.yaml`), and computed OPEX; held names
+  flagged as IV-crush risk. *Follow-ups:* (1) **timing layer** — event-day extra
+  runs in the scheduled workflow (e.g. FOMC ~2:15pm ET); (2) **ex-dividend
+  dates** — needs a dividend feed (OPEX done, ex-div stubbed); (3) scheduled
+  scan-only runs have no held set, so earnings show as opportunity-only there;
+  (4) swap curated macro for the FMP economic-calendar API when wanted.
 - [ ] **Event-clustering gate (G13)** *(med).* Extension of G12: flag/limit
   positions clustered around the **same catalyst date** (e.g., three earnings
-  plays all the same week).
+  plays all the same week). The radar now provides the event dates to cluster on.
 - [ ] **ADX / ATR technicals** *(med).* Needs OHLC (switch some FMP calls from
   `historical-price-eod/light` to `/full`). Adds trend-strength + true-range.
 - [ ] **More market-regime inputs** *(med).* VIX level, VIX term structure

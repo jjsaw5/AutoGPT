@@ -101,6 +101,7 @@ class Scanner:
         *,
         tickers: list[str] | None = None,
         extra_tickers: list[str] | None = None,
+        held_tickers: list[str] | None = None,
         context: dict[str, Any] | None = None,
         log_path: str | None = None,
         journal_path: str | None = None,
@@ -154,7 +155,24 @@ class Scanner:
             )
 
         rank_and_decide(evaluated, self.config, regime=regime)
-        readout = render_readout(evaluated, self.config, context=context, regime=regime)
+
+        # Catalyst radar — forward view of earnings (reused from theses) + curated
+        # macro + computed OPEX; held names flagged as risk vs. opportunity.
+        catalysts = None
+        cat_cfg = self.config.catalysts
+        if cat_cfg.get("enabled", True):
+            from .catalysts import build_radar, load_macro_calendar
+            macro = load_macro_calendar(cat_cfg.get("macro_calendar_file", "macro_calendar.yaml"))
+            catalysts = build_radar(
+                evaluated, now=now,
+                horizon_days=int(cat_cfg.get("horizon_days", 14)),
+                macro_events=macro,
+                held_tickers={t.upper() for t in (held_tickers or [])},
+            )
+
+        readout = render_readout(
+            evaluated, self.config, context=context, regime=regime, catalysts=catalysts
+        )
 
         rows_logged = 0
         if log_path:

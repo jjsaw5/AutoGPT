@@ -20,6 +20,7 @@ def render_readout(
     *,
     context: dict[str, Any] | None = None,
     regime=None,
+    catalysts=None,
 ) -> str:
     ctx = context or {}
     spec_bar = float(config.speculative.get("quality_bar_min_composite", 75))
@@ -43,6 +44,12 @@ def render_readout(
             f"MARKET REGIME: {regime.regime} · composite {regime.composite:+.2f} · "
             f"macro {regime.macro_score:+d} ({regime.macro_label}){infl}"
         )
+
+    # --- Section 0: catalyst radar (what's coming) ----------------------------
+    if catalysts is not None:
+        from ..catalysts import render_radar
+        lines.append("")
+        lines.append(render_radar(catalysts).rstrip())
 
     # --- Section 1: core book -------------------------------------------------
     lines.append("\n[1] CORE BOOK  (closest to GO first)")

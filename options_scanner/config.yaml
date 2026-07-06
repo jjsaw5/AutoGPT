@@ -97,6 +97,11 @@ cadence:
   intraday_interval_min: 30
   eod_scan: true
 
+catalysts:
+  enabled: true
+  horizon_days: 14                # forward window for the CATALYST RADAR
+  macro_calendar_file: macro_calendar.yaml   # curated FOMC/CPI/NFP (maintain quarterly)
+
 execution:
   mode: recommend_only            # human confirms every order
 

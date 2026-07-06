@@ -1,0 +1,33 @@
+# Curated macro-event calendar (FOMC / CPI / NFP).
+#
+# MAINTAIN THIS QUARTERLY. These are scheduled, published-ahead events:
+#   - FOMC  : the Fed publishes meeting dates ~a year ahead (8 meetings/yr).
+#             Use the DECISION day (2nd day of the two-day meeting).
+#   - NFP   : jobs report, first Friday of the month (BLS).
+#   - CPI   : mid-month for the prior month — VERIFY exact dates on the BLS
+#             release schedule; the ones below are approximate placeholders.
+#
+# kind: fomc | cpi | nfp   ·   date: YYYY-MM-DD (US/Eastern release/decision day)
+# Only future-dated entries matter; past ones are ignored automatically.
+
+events:
+  # --- FOMC decision days (2026 schedule, published by the Fed) ---
+  - {date: 2026-07-29, kind: fomc, label: "FOMC decision"}
+  - {date: 2026-09-16, kind: fomc, label: "FOMC decision"}
+  - {date: 2026-10-28, kind: fomc, label: "FOMC decision"}
+  - {date: 2026-12-09, kind: fomc, label: "FOMC decision"}
+
+  # --- Nonfarm payrolls (first Friday) ---
+  - {date: 2026-08-07, kind: nfp, label: "Jobs report (NFP)"}
+  - {date: 2026-09-04, kind: nfp, label: "Jobs report (NFP)"}
+  - {date: 2026-10-02, kind: nfp, label: "Jobs report (NFP)"}
+  - {date: 2026-11-06, kind: nfp, label: "Jobs report (NFP)"}
+  - {date: 2026-12-04, kind: nfp, label: "Jobs report (NFP)"}
+
+  # --- CPI (APPROXIMATE — verify against the BLS schedule) ---
+  - {date: 2026-07-14, kind: cpi, label: "CPI (Jun) — VERIFY"}
+  - {date: 2026-08-12, kind: cpi, label: "CPI (Jul) — VERIFY"}
+  - {date: 2026-09-11, kind: cpi, label: "CPI (Aug) — VERIFY"}
+  - {date: 2026-10-13, kind: cpi, label: "CPI (Sep) — VERIFY"}
+  - {date: 2026-11-13, kind: cpi, label: "CPI (Oct) — VERIFY"}
+  - {date: 2026-12-10, kind: cpi, label: "CPI (Nov) — VERIFY"}
