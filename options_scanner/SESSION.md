@@ -74,7 +74,14 @@ GitHub's infrastructure, and reaches Turso/FMP/UW directly (no proxy).
 - **To enable:** set four repo **Actions secrets** — `FMP_API_KEY`,
   `UW_API_KEY`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`.
 
-Event-triggered and weekend runs stay manual/interactive for now.
+**Event timing** — `event-scan.yml` adds one extra scan at **~2:15pm ET on FOMC
+decision days** (read from `macro_calendar.yaml`). That's the only intraday
+event the baseline misses: after-hours earnings hit the pre-close run,
+before-open earnings and 8:30am CPI/NFP hit the 10:00 run, but the 2:00pm FOMC
+decision falls between the 12:45 and 15:15 slots. Its gate requires *both* FOMC-
+day and the 2:15 window, so it never collides with the regular schedule.
+
+Weekend maintenance stays manual/interactive.
 
 ---
 

@@ -1,0 +1,86 @@
+name: Event scan (FOMC)
+
+# The TIMING layer of the event-trigger overlay (SESSION.md). The 3x/day
+# baseline already covers earnings (after-hours -> pre-close run; before-open ->
+# 10:00 run) and CPI/NFP (8:30am pre-market -> caught by the 10:00 run). The one
+# intraday event it misses is the FOMC decision at 2:00pm ET — so this runs an
+# extra scan at ~2:15pm ET, but ONLY on FOMC decision days.
+#
+# The gate requires BOTH "today is FOMC" AND the 2:15pm-ET window, so the winter
+# cron firing in summer (which lands at 3:15pm EDT) is correctly skipped — no
+# collision with the regular pre-close run in scheduled-scan.yml.
+#
+# FOMC dates are read from macro_calendar.yaml (kind: fomc). Same four secrets
+# as scheduled-scan.yml. Activates when the scanner is the repo root.
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "15 18 * * 1-5"      # 2:15pm ET (EDT)
+    - cron: "15 19 * * 1-5"      # 2:15pm ET (EST)
+
+jobs:
+  fomc-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Gate to FOMC day + 2:15pm ET window
+        id: gate
+        run: |
+          python - <<'PY'
+          import os, datetime, zoneinfo
+          now = datetime.datetime.now(zoneinfo.ZoneInfo("America/New_York"))
+          in_window = abs(now.hour*60 + now.minute - (14*60 + 15)) <= 20
+          today = now.date().isoformat()
+          is_fomc = False
+          try:
+              for line in open("macro_calendar.yaml", encoding="utf-8"):
+                  if today in line and "fomc" in line.lower():
+                      is_fomc = True
+                      break
+          except FileNotFoundError:
+              pass
+          run = now.weekday() < 5 and in_window and is_fomc
+          if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
+              run = True
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              fh.write(f"run={'true' if run else 'false'}\n")
+          print(f"ET now={now:%Y-%m-%d %H:%M %Z} fomc={is_fomc} -> run={run}")
+          PY
+
+      - name: Install dependencies
+        if: steps.gate.outputs.run == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Run FOMC scan (scan-only)
+        if: steps.gate.outputs.run == 'true'
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          UW_API_KEY: ${{ secrets.UW_API_KEY }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: |
+          python -m options_scanner.cli scan --history history | tee scan_readout.txt
+
+      - name: Publish digest to the run summary
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          {
+            echo '## FOMC-day scan digest'
+            echo '```'
+            sed -n '1,60p' scan_readout.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload full readout
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fomc-scan-readout-${{ github.run_id }}
+          path: scan_readout.txt
+          retention-days: 30

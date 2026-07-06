@@ -59,11 +59,16 @@ just delete) as they ship. Priority is a rough guide, not a promise.*
 - [x] **Catalyst engine — awareness layer** *(shipped).* CATALYST RADAR in the
   readout: upcoming earnings (reused from theses — no extra calls), curated
   macro (FOMC/CPI/NFP in `macro_calendar.yaml`), and computed OPEX; held names
-  flagged as IV-crush risk. *Follow-ups:* (1) **timing layer** — event-day extra
-  runs in the scheduled workflow (e.g. FOMC ~2:15pm ET); (2) **ex-dividend
-  dates** — needs a dividend feed (OPEX done, ex-div stubbed); (3) scheduled
-  scan-only runs have no held set, so earnings show as opportunity-only there;
-  (4) swap curated macro for the FMP economic-calendar API when wanted.
+  flagged as IV-crush risk. *Follow-ups:* (1) **ex-dividend dates** — needs a
+  dividend feed (OPEX done, ex-div stubbed); (2) scheduled scan-only runs have
+  no held set, so earnings show as opportunity-only there; (3) swap curated
+  macro for the FMP economic-calendar API when wanted.
+- [x] **Catalyst engine — timing layer** *(shipped, pending enable).* GitHub
+  Actions `event-scan.yml` runs one extra scan at ~2:15pm ET on FOMC decision
+  days (the only intraday event the 3×/day baseline misses; CPI/NFP at 8:30am
+  and earnings are already covered). FOMC dates from `macro_calendar.yaml`;
+  gate requires FOMC-day AND the 2:15 window so it never collides with the
+  regular pre-close run. Same activation/secrets as the scheduled scan.
 - [ ] **Event-clustering gate (G13)** *(med).* Extension of G12: flag/limit
   positions clustered around the **same catalyst date** (e.g., three earnings
   plays all the same week). The radar now provides the event dates to cluster on.
