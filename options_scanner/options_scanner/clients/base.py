@@ -32,12 +32,18 @@ class BaseHTTPClient:
         default_headers: dict[str, str] | None = None,
         timeout: float = 20.0,
         cache_ttl: float = 300.0,
+        max_retries: int = 3,
+        backoff_base: float = 1.0,
+        sleep=time.sleep,
     ) -> None:
         if requests is None:  # pragma: no cover
             raise RuntimeError("The 'requests' package is required to make HTTP calls.")
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.cache_ttl = cache_ttl
+        self.max_retries = max_retries
+        self.backoff_base = backoff_base
+        self._sleep = sleep  # injectable for tests
         self._session = requests.Session()
         if default_headers:
             self._session.headers.update(default_headers)
@@ -72,12 +78,22 @@ class BaseHTTPClient:
                 return payload
             del self._cache[key]
 
-        try:
-            resp = self._session.get(
-                url, params=params, headers=headers, timeout=self.timeout
-            )
-        except Exception as exc:  # network-level failure
-            raise HTTPError(f"GET {url} failed: {exc}") from exc
+        # Retry transient throttling / unavailability (429, 503) with backoff.
+        for attempt in range(self.max_retries + 1):
+            try:
+                resp = self._session.get(
+                    url, params=params, headers=headers, timeout=self.timeout
+                )
+            except Exception as exc:  # network-level failure
+                raise HTTPError(f"GET {url} failed: {exc}") from exc
+
+            if resp.status_code in (429, 503) and attempt < self.max_retries:
+                delay = _retry_after(resp) or self.backoff_base * (2 ** attempt)
+                logger.info("GET %s -> %s, backing off %.1fs (attempt %d)",
+                            url, resp.status_code, delay, attempt + 1)
+                self._sleep(delay)
+                continue
+            break
 
         if resp.status_code >= 400:
             raise HTTPError(f"GET {url} -> {resp.status_code}: {resp.text[:200]}")
@@ -86,6 +102,17 @@ class BaseHTTPClient:
         if use_cache:
             self._cache[key] = (self._now() + self.cache_ttl, payload)
         return payload
+
+
+def _retry_after(resp: Any) -> float | None:
+    """Seconds to wait from a Retry-After header (numeric form), if present."""
+    val = resp.headers.get("Retry-After")
+    if not val:
+        return None
+    try:
+        return min(float(val), 30.0)  # cap so we never stall a scan too long
+    except (TypeError, ValueError):
+        return None
 
 
 def _parse_body(resp: Any) -> Any:
