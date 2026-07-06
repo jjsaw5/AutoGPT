@@ -189,6 +189,23 @@ class Scanner:
             history_rows = store.record(rows, manifest=manifest)
             store.query_db.close()
 
+            # Write-through to the hosted DB when configured. JSONL is already
+            # persisted, so a Turso/network hiccup only costs this scan's remote
+            # copy — never the scan itself; the next `history sync` catches up.
+            creds = self.config.credentials
+            if creds.has_turso:
+                try:
+                    from .history import TursoQueryDB
+                    remote = TursoQueryDB.from_env(
+                        creds.turso_database_url, creds.turso_auth_token
+                    )
+                    remote.apply_run(manifest)
+                    remote.apply_candidates(rows)
+                except Exception as exc:  # never abort a scan on remote-DB issues
+                    logger.warning(
+                        "Turso write-through failed (JSONL retains the scan): %s", exc
+                    )
+
         return ScanResult(
             scan_id=scan_id, timestamp=timestamp,
             evaluated=evaluated, readout=readout, rows_logged=rows_logged,

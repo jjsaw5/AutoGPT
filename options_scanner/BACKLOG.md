@@ -25,14 +25,15 @@ just delete) as they ship. Priority is a rough guide, not a promise.*
 
 ## 2. Enhancements — ready to build
 
-- [ ] **Durable history → Turso (Phase 2)** *(high value; in progress).* Phase 1
-  shipped: append-only JSONL under `history/` (committed to git — the source of
-  truth) + a rebuildable local SQLite query DB, backfilled with the runs to date.
-  **Phase 2** wires the hosted **Turso** (libSQL/SQLite over HTTPS — the only DB
-  route that clears this env's HTTPS-only egress proxy) behind the same
-  `QueryDB` interface. *Needs: a Turso DB provisioned + `TURSO_DATABASE_URL` /
-  `TURSO_AUTH_TOKEN` in `.env` (never committed).* Then: write-through + a
-  resync-on-reconnect so an ephemeral-container blip never drops a scan.
+- [x] **Durable history → Turso** *(shipped).* Phase 1: append-only JSONL under
+  `history/` (committed — the source of truth) + a rebuildable local SQLite query
+  DB, backfilled with the runs to date. Phase 2: hosted **Turso** (libSQL/SQLite
+  over the HTTP pipeline API via `requests`, so it clears this env's HTTPS-only
+  egress proxy) behind the same `QueryDB` interface, with per-scan write-through
+  and a `history sync` resync path. Provisioned; 233 rows + 6 manifests live.
+  *Follow-ups:* (a) periodic/again-on-reconnect auto-sync if write-through fails
+  repeatedly; (b) push calibration queries (Brier by bucket, win-rate by regime)
+  to run server-side against Turso.
 - [ ] **Graduate-to-Postgres trigger** *(someday).* If volume/concurrency
   outgrows SQLite/Turso, the monthly-JSONL layout `COPY`s straight into Postgres
   with no reshaping. Not needed at current volume — revisit if we add live

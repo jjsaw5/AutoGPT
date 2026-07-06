@@ -7,9 +7,13 @@ import json
 from options_scanner.history import (
     HistoryStore,
     SqliteQueryDB,
+    TursoQueryDB,
     build_run_manifest,
     backfill_from_legacy,
     normalize_candidate_row,
+    _encode_arg,
+    _decode_value,
+    _normalize_turso_url,
 )
 
 
@@ -113,3 +117,83 @@ def test_normalize_maps_pillar_keys():
     assert row["p1"] == 77.3 and row["pop_predicted"] == 0.6
     assert row["from_chain"] == 1            # bool coerced to int for indexing
     assert "junk" not in row
+
+
+# --- Turso backend (HTTP pipeline) -------------------------------------------
+
+def test_turso_arg_and_url_encoding():
+    assert _encode_arg(None) == {"type": "null"}
+    assert _encode_arg(True) == {"type": "integer", "value": "1"}
+    assert _encode_arg(7) == {"type": "integer", "value": "7"}     # ints as strings
+    assert _encode_arg(1.5) == {"type": "float", "value": 1.5}
+    assert _encode_arg("x") == {"type": "text", "value": "x"}
+    assert _decode_value({"type": "integer", "value": "42"}) == 42
+    assert _decode_value({"type": "null"}) is None
+    # libsql:// scheme is rewritten to https for the HTTP pipeline endpoint.
+    assert _normalize_turso_url("libsql://db.turso.io") == "https://db.turso.io"
+
+
+class _FakeTurso:
+    """A libSQL HTTP-pipeline server backed by real sqlite3 — exercises the full
+    encode -> SQL -> decode path without a network or live DB."""
+
+    def __init__(self):
+        import sqlite3
+        self._c = sqlite3.connect(":memory:")
+
+    def __call__(self, payload):
+        results = []
+        for req in payload["requests"]:
+            if req["type"] == "close":
+                results.append({"type": "ok", "response": {"type": "close"}})
+                continue
+            stmt = req["stmt"]
+            args = [_decode_value(a) for a in stmt.get("args", [])]
+            cur = self._c.execute(stmt["sql"], args)
+            if cur.description:
+                cols = [{"name": d[0]} for d in cur.description]
+                rows = [[_enc(v) for v in row] for row in cur.fetchall()]
+            else:
+                cols, rows = [], []
+            self._c.commit()
+            results.append({"type": "ok", "response": {
+                "type": "execute", "result": {"cols": cols, "rows": rows}}})
+        return {"results": results}
+
+
+def _enc(v):
+    if v is None:
+        return {"type": "null"}
+    if isinstance(v, int):
+        return {"type": "integer", "value": str(v)}
+    if isinstance(v, float):
+        return {"type": "float", "value": v}
+    return {"type": "text", "value": str(v)}
+
+
+def test_turso_roundtrip_against_fake_server(tmp_path):
+    db = TursoQueryDB(_FakeTurso())    # ensure_schema runs the DDL through the poster
+    rows = [
+        _row("SPY", "s1", "2026-07-06T13:00:00Z", composite=69.0, from_chain=False, decision="GO"),
+        _row("SPY", "s2", "2026-07-06T14:00:00Z", composite=48.0, from_chain=True, decision="PASS"),
+    ]
+    db.apply_run(build_run_manifest(rows[:1], scan_id="s1", timestamp="2026-07-06T13:00:00Z"))
+    db.apply_candidates(rows)
+
+    tl = db.ticker_timeline("SPY")
+    assert [r["decision"] for r in tl] == ["GO", "PASS"]       # ordered by timestamp
+    assert tl[0]["from_chain"] == 0 and tl[1]["from_chain"] == 1  # bool survived round-trip
+    assert db.runs()[0]["n_candidates"] == 1
+
+
+def test_history_sync_to_pushes_to_backend(tmp_path):
+    # JSONL source of truth -> sync_to any QueryDB (the Turso push path).
+    store = _store(tmp_path)
+    ts = "2026-07-06T13:00:00Z"
+    r = [_row("SPY", "s1", ts)]
+    store.record(r, manifest=build_run_manifest(r, scan_id="s1", timestamp=ts))
+
+    remote = TursoQueryDB(_FakeTurso())
+    n = store.sync_to(remote)
+    assert n == 1
+    assert remote.ticker_timeline("SPY")[0]["decision"] == "GO"

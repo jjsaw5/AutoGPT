@@ -31,6 +31,8 @@ class Credentials:
 
     fmp_api_key: str | None = None
     uw_api_key: str | None = None
+    turso_database_url: str | None = None
+    turso_auth_token: str | None = None
 
     @property
     def has_fmp(self) -> bool:
@@ -39,6 +41,10 @@ class Credentials:
     @property
     def has_uw(self) -> bool:
         return bool(self.uw_api_key)
+
+    @property
+    def has_turso(self) -> bool:
+        return bool(self.turso_database_url and self.turso_auth_token)
 
 
 @dataclass
@@ -154,5 +160,7 @@ def load_config(
     creds = Credentials(
         fmp_api_key=os.environ.get("FMP_API_KEY"),
         uw_api_key=os.environ.get("UW_API_KEY"),
+        turso_database_url=os.environ.get("TURSO_DATABASE_URL"),
+        turso_auth_token=os.environ.get("TURSO_AUTH_TOKEN"),
     )
     return Config(raw=raw, credentials=creds)

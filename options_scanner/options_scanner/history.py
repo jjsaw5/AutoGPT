@@ -31,7 +31,7 @@ import sqlite3
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Optional
+from typing import Any, Callable, Iterable, Iterator, Optional
 
 # Candidate-row columns persisted to the query DB. Mirrors the JSONL keys
 # emitted by ``pipeline.logbook.candidate_to_row`` (lower-cased, P1->p1, etc.).
@@ -253,6 +253,144 @@ class SqliteQueryDB(QueryDB):
 
 
 # --------------------------------------------------------------------------- #
+# Turso backend — hosted libSQL over its HTTP pipeline API (Phase 2).
+#
+# We talk to `POST {url}/v2/pipeline` with `requests` rather than a native
+# libSQL client on purpose: `requests` honors this environment's HTTPS_PROXY and
+# CA bundle, which is the only way out to the network here. Same SQLite dialect
+# and same DDL as the local backend, so the QueryDB interface is unchanged.
+# --------------------------------------------------------------------------- #
+# poster(payload) -> parsed JSON response. Injectable so the encode/parse logic
+# is testable without a live DB or network.
+Poster = Callable[[dict[str, Any]], dict[str, Any]]
+
+
+def _encode_arg(v: Any) -> dict[str, Any]:
+    """Python value -> a libSQL typed argument. Integers travel as strings."""
+    if v is None:
+        return {"type": "null"}
+    if isinstance(v, bool):
+        return {"type": "integer", "value": str(int(v))}
+    if isinstance(v, int):
+        return {"type": "integer", "value": str(v)}
+    if isinstance(v, float):
+        return {"type": "float", "value": v}
+    return {"type": "text", "value": str(v)}
+
+
+def _decode_value(cell: dict[str, Any]) -> Any:
+    t = cell.get("type")
+    val = cell.get("value")
+    if t == "null":
+        return None
+    if t == "integer":
+        return int(val)
+    if t == "float":
+        return float(val)
+    return val  # text / blob (base64) returned as-is
+
+
+def _requests_poster(url: str, auth_token: str, *, timeout: float = 20.0) -> Poster:
+    import requests  # local import: only needed when a live Turso is configured
+
+    endpoint = url.rstrip("/") + "/v2/pipeline"
+    headers = {"Authorization": f"Bearer {auth_token}", "Content-Type": "application/json"}
+
+    def _post(payload: dict[str, Any]) -> dict[str, Any]:
+        resp = requests.post(endpoint, json=payload, headers=headers, timeout=timeout)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Turso pipeline {resp.status_code}: {resp.text[:200]}")
+        return resp.json()
+
+    return _post
+
+
+def _normalize_turso_url(url: str) -> str:
+    """`libsql://x.turso.io` -> `https://x.turso.io` for the HTTP pipeline API."""
+    if url.startswith("libsql://"):
+        return "https://" + url[len("libsql://"):]
+    return url
+
+
+class TursoQueryDB(QueryDB):
+    def __init__(self, poster: Poster, *, ensure_schema: bool = True) -> None:
+        self._post = poster
+        if ensure_schema:
+            self._execute_batch(
+                [(stmt, ()) for stmt in _SCHEMA.split(";") if stmt.strip()]
+            )
+
+    @classmethod
+    def from_env(cls, url: str, auth_token: str, **kw) -> "TursoQueryDB":
+        return cls(_requests_poster(_normalize_turso_url(url), auth_token), **kw)
+
+    def _execute_batch(self, statements: list[tuple[str, tuple]]) -> list[dict[str, Any]]:
+        """Run statements in one pipeline round-trip; return each execute result."""
+        requests_ = [
+            {"type": "execute",
+             "stmt": {"sql": sql, "args": [_encode_arg(a) for a in args]}}
+            for sql, args in statements
+        ]
+        requests_.append({"type": "close"})
+        payload = {"requests": requests_}
+        body = self._post(payload)
+        results = []
+        for item in body.get("results", []):
+            if item.get("type") == "error":
+                err = item.get("error", {})
+                raise RuntimeError(f"Turso stmt error: {err.get('message', err)}")
+            resp = item.get("response", {})
+            if resp.get("type") == "execute":
+                results.append(resp.get("result", {}))
+        return results
+
+    @staticmethod
+    def _rows_to_dicts(result: dict[str, Any]) -> list[dict[str, Any]]:
+        cols = [c.get("name") for c in result.get("cols", [])]
+        return [
+            {cols[i]: _decode_value(cell) for i, cell in enumerate(row)}
+            for row in result.get("rows", [])
+        ]
+
+    def apply_run(self, manifest: RunManifest) -> None:
+        row = manifest.to_row()
+        cols = ", ".join(row)
+        placeholders = ", ".join("?" for _ in row)
+        self._execute_batch([(
+            f"INSERT OR REPLACE INTO runs ({cols}) VALUES ({placeholders})",
+            tuple(row.values()),
+        )])
+
+    def apply_candidates(self, rows: Iterable[dict[str, Any]]) -> None:
+        norm = [normalize_candidate_row(r) for r in rows]
+        if not norm:
+            return
+        cols = ", ".join(_CANDIDATE_COLUMNS)
+        placeholders = ", ".join("?" for _ in _CANDIDATE_COLUMNS)
+        sql = f"INSERT OR REPLACE INTO scan_candidates ({cols}) VALUES ({placeholders})"
+        self._execute_batch([(sql, tuple(r[c] for c in _CANDIDATE_COLUMNS)) for r in norm])
+
+    def ticker_timeline(self, ticker: str) -> list[dict[str, Any]]:
+        res = self._execute_batch([(
+            "SELECT timestamp, composite, effective_composite, regime_adj, "
+            "decision, from_chain, structure, vol_regime, iv_rank "
+            "FROM scan_candidates WHERE ticker = ? ORDER BY timestamp",
+            (ticker.upper(),),
+        )])
+        return self._rows_to_dicts(res[0]) if res else []
+
+    def runs(self, limit: int = 100) -> list[dict[str, Any]]:
+        res = self._execute_batch([(
+            "SELECT * FROM runs ORDER BY timestamp DESC LIMIT ?", (limit,),
+        )])
+        return self._rows_to_dicts(res[0]) if res else []
+
+    def close(self) -> None:
+        # Each pipeline call already sends a `close`; nothing persistent to shut.
+        pass
+
+
+# --------------------------------------------------------------------------- #
 # HistoryStore — owns the JSONL source-of-truth and (optionally) a query DB.
 # --------------------------------------------------------------------------- #
 @dataclass
@@ -304,18 +442,24 @@ class HistoryStore:
                 yield line
 
     def rebuild(self) -> int:
-        """Replay all JSONL into a fresh query DB. Returns candidate rows loaded.
-
-        De-duplicates on (scan_id, ticker) keeping the last write, so replaying
-        an append log with overlaps is safe.
-        """
+        """Replay all JSONL into ``self.query_db``. Returns candidate rows loaded."""
         if self.query_db is None:
             raise RuntimeError("rebuild() needs a query_db")
-        # runs first (manifests), then candidates; upserts dedupe naturally.
+        return self.sync_to(self.query_db)
+
+    def sync_to(self, target: QueryDB) -> int:
+        """Replay all JSONL into any query DB. Returns candidate rows loaded.
+
+        This is both the local rebuild and the remote-sync path: point ``target``
+        at a :class:`TursoQueryDB` to push the durable JSONL up to the hosted DB
+        (and to resync after an ephemeral-container blip). Upserts on
+        (scan_id, ticker) / scan_id, so replaying an append log with overlaps is
+        idempotent — the last write for a key wins.
+        """
         for row in self.iter_run_rows():
-            self.query_db.apply_run(_row_to_manifest(row))
+            target.apply_run(_row_to_manifest(row))
         rows = list(self.iter_candidate_rows())
-        self.query_db.apply_candidates(rows)
+        target.apply_candidates(rows)
         return len(rows)
 
 

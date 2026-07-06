@@ -57,6 +57,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     jrnl.add_argument("--key", default=None, help="annotate: setup_key to annotate.")
     jrnl.add_argument("--note", default=None, help="annotate: the note text.")
     jrnl.add_argument("-v", "--verbose", action="store_true")
+
+    # history subcommands
+    hist = sub.add_parser("history", help="Sync / inspect durable run history.")
+    hist.add_argument("action", choices=["sync", "timeline"])
+    hist.add_argument("--history", required=True, help="Path to the history dir.")
+    hist.add_argument("--config", default=None)
+    hist.add_argument("--ticker", default=None, help="timeline: symbol to trace across runs.")
+    hist.add_argument("-v", "--verbose", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -96,6 +104,50 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "journal":
         return _journal_command(args)
 
+    if args.command == "history":
+        return _history_command(args)
+
+    return 1
+
+
+def _history_command(args) -> int:
+    from .history import HistoryStore, SqliteQueryDB, TursoQueryDB
+
+    config = load_config(args.config)
+    creds = config.credentials
+
+    if args.action == "sync":
+        # Push the durable JSONL up to the hosted DB (and resync after a blip).
+        if not creds.has_turso:
+            print("No Turso credentials (set TURSO_DATABASE_URL / TURSO_AUTH_TOKEN).")
+            return 1
+        store = HistoryStore(base_dir=args.history)
+        remote = TursoQueryDB.from_env(creds.turso_database_url, creds.turso_auth_token)
+        n = store.sync_to(remote)
+        print(f"Synced {n} candidate rows (+ run manifests) to Turso.")
+        return 0
+
+    if args.action == "timeline":
+        if not args.ticker:
+            print("timeline requires --ticker")
+            return 1
+        # Prefer the hosted DB; fall back to a local rebuild from JSONL.
+        if creds.has_turso:
+            db = TursoQueryDB.from_env(creds.turso_database_url, creds.turso_auth_token)
+        else:
+            db = SqliteQueryDB()
+            HistoryStore(base_dir=args.history, query_db=db).rebuild()
+        rows = db.ticker_timeline(args.ticker)
+        if not rows:
+            print(f"No history for {args.ticker.upper()}.")
+            return 0
+        print(f"{args.ticker.upper()} across {len(rows)} runs:")
+        for r in rows:
+            fc = r.get("from_chain")
+            chain = "real" if fc == 1 else ("placeholder" if fc == 0 else "n/a")
+            print(f"  {str(r['timestamp'])[:19]}  comp={r['composite']:>5}  "
+                  f"{str(r['decision']):<5}  chain={chain}")
+        return 0
     return 1
 
 
