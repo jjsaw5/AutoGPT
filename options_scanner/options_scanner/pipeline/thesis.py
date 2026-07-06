@@ -14,6 +14,8 @@ from typing import Any
 
 from ..config import Config
 from ..expected_move import estimate_expected_move
+from ..flow import analyze_flow
+from ..technicals import compute_technicals, late_entry_penalty, technical_vote
 from ..models import (
     Candidate,
     Catalyst,
@@ -91,18 +93,23 @@ def build_thesis(candidate: Candidate, config: Config) -> Thesis:
     struct_cfg = config.structure
 
     # --- Direction + conviction -----------------------------------------------
-    prem = _signed_premium(signals)
-    tech = _technical_bias(signals)
+    # Quality-weighted options flow (aggressive/opening/single-leg counts more);
+    # falls back to raw net premium when no alerts are available.
+    flow = analyze_flow(signals.get("flow_alerts", []))
+    used_flow = flow.n > 0 and flow.vote != 0.0
+    if used_flow:
+        flow_vote = flow.vote * (0.5 + 0.5 * flow.quality)   # discount noisy flow
+    else:
+        prem = _signed_premium(signals)
+        flow_vote = max(-1.0, min(1.0, prem / 1_000_000.0)) if prem else 0.0
+
+    tech_data = compute_technicals(signals.get("closes", []))
+    tech = technical_vote(tech_data) if tech_data else _technical_bias(signals)
     dp = _darkpool_bias(signals)
 
-    # Normalize premium into a -1..1 vote via a soft sign.
-    prem_vote = 0.0
-    if prem:
-        prem_vote = max(-1.0, min(1.0, prem / 1_000_000.0))
-
-    votes = [v for v in (prem_vote, tech, dp) if v != 0.0]
+    votes = [v for v in (flow_vote, tech, dp) if v != 0.0]
     net_vote = sum(votes) / len(votes) if votes else 0.0
-    agreement = _agreement(prem_vote, tech, dp)
+    agreement = _agreement(flow_vote, tech, dp)
 
     if net_vote > 0.15:
         direction = Direction.BULLISH
@@ -111,11 +118,14 @@ def build_thesis(candidate: Candidate, config: Config) -> Thesis:
     else:
         direction = Direction.NEUTRAL
 
-    conviction = round(min(1.0, abs(net_vote) * 0.6 + agreement * 0.4), 3)
+    # Late-entry penalty: trim conviction when buying into an already-stretched move.
+    tdir = 1 if direction == Direction.BULLISH else (-1 if direction == Direction.BEARISH else 0)
+    late = late_entry_penalty(tech_data, tdir)
+    conviction = round(min(1.0, abs(net_vote) * 0.6 + agreement * 0.4) * late, 3)
 
     supporting = []
-    if prem_vote:
-        supporting.append("net_premium")
+    if flow_vote:
+        supporting.append("flow" if used_flow else "net_premium")
     if tech:
         supporting.append("technical")
     if dp:
