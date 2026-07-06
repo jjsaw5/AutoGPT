@@ -63,9 +63,10 @@ def test_core_book_has_candidate_table(config):
     rank_and_decide([ec], config)
     readout = render_readout([ec], config)
     if ec.decision.value in ("GO", "WATCH"):
-        assert "TICKER" in readout and "STRUCTURE" in readout and "NOTE" in readout
-        assert "DEC" in readout and "ENTRY" in readout
-        # the ticker appears in a table row with its decision
+        # table headers: contract details (strikes/expiry/cost) + distance-to-GO
+        assert "TICKER" in readout and "STRUCTURE" in readout
+        assert "CONTRACT" in readout and "EXPIRY" in readout and "COST" in readout
+        assert "Δ→GO" in readout
         assert "AAPL" in readout
 
 

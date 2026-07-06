@@ -95,33 +95,70 @@ def _entry_short(ec: EvaluatedCandidate) -> str:
     return f"${amt:.0f} db" if amt is not None else "—"
 
 
-def _candidate_note(ec: EvaluatedCandidate, go: float) -> str:
-    """Why it isn't a GO (or 'GO'): bad pricing, failed gates, or score gap."""
+# Pillar → short label for the "what moves it" lever (weakest pillar = the drag).
+_PILLAR_LABEL = {
+    "p1": "vol", "p2": "dir", "p3": "EV", "p4": "catalyst", "p5": "liq", "p6": "corrob",
+}
+
+
+def _weakest_pillar(ec: EvaluatedCandidate) -> str:
+    s = ec.score
+    pillars = {"p1": s.p1, "p2": s.p2, "p3": s.p3, "p4": s.p4, "p5": s.p5, "p6": s.p6}
+    key = min(pillars, key=lambda k: pillars[k])
+    return f"{_PILLAR_LABEL[key]} {pillars[key]:.0f}"
+
+
+def _distance_to_go(ec: EvaluatedCandidate, go: float) -> str:
+    """The binding blocker: bad pricing, a failed gate, GO, or the score gap +
+    the weakest pillar (the single most likely lever to move it up)."""
     if ec.structure.max_loss is not None and ec.structure.max_loss <= 0:
         return "⚠ bad pricing"
     failed = [r.gate_id for r in ec.gates.failures]
     if failed:
-        return "gated " + ",".join(failed)
+        return "gate " + ",".join(failed)
     if ec.decision == Decision.GO:
         return "GO ✓"
-    return f"score {ec.effective_composite:.0f}<{go:.0f}"
+    gap = go - ec.effective_composite
+    return f"+{gap:.1f} → {_weakest_pillar(ec)}"
+
+
+def _contract_str(ec: EvaluatedCandidate) -> str:
+    """Compact contract: signed strikes + type, e.g. '+C751 -C761'."""
+    legs = ec.structure.legs
+    if not legs:
+        return "—"
+    return " ".join(
+        f"{'+' if lg.action == 'buy' else '-'}{lg.option_type[0].upper()}{lg.strike:g}"
+        for lg in legs
+    )
+
+
+def _expiry_str(ec: EvaluatedCandidate) -> str:
+    s = ec.structure
+    if s.expiry:
+        return s.expiry
+    if s.legs and s.legs[0].expiry:
+        return s.legs[0].expiry            # placeholder shows '~7-30d'
+    return "—"
 
 
 def _render_candidate_table(core_book: list[EvaluatedCandidate], config: Config) -> list[str]:
     """Compact one-line-per-candidate table — the new-position analogue of the
-    position-review table. Detail rows follow below it."""
+    position-review table. Shows the contract we'd trade (strikes/expiry/cost)
+    and the distance to a full GO. Detail rows follow below it."""
     go = float(config.go_threshold)
-    header = (f"  {'#':<2} {'TICKER':<6} {'STRUCTURE':<15} {'DEC':<5} "
-              f"{'COMP':>5} {'POP':>4} {'EV':>7} {'ENTRY':>9}  NOTE")
+    header = (f"  {'#':<2} {'TICKER':<6} {'STRUCTURE':<15} {'DEC':<5} {'COMP':>5} "
+              f"{'POP':>4} {'EV':>7} {'CONTRACT':<24} {'EXPIRY':<11} {'COST':>9}  Δ→GO / BLOCKER")
     rows = [header, "  " + "-" * (len(header) - 2)]
     for rank, ec in enumerate(core_book, 1):
-        s, t = ec.score, ec.thesis
+        s = ec.score
         pop = f"{s.pop:.0%}" if s.pop is not None else "—"
         ev = f"${s.expected_value:.0f}" if s.expected_value is not None else "—"
         rows.append(
             f"  {rank:<2} {ec.ticker:<6} {ec.structure.structure_type.value:<15} "
-            f"{ec.decision.value:<5} {ec.effective_composite:>5.1f} {pop:>4} "
-            f"{ev:>7} {_entry_short(ec):>9}  {_candidate_note(ec, go)}"
+            f"{ec.decision.value:<5} {ec.effective_composite:>5.1f} {pop:>4} {ev:>7} "
+            f"{_contract_str(ec):<24} {_expiry_str(ec):<11} {_entry_short(ec):>9}  "
+            f"{_distance_to_go(ec, go)}"
         )
     return rows
 
