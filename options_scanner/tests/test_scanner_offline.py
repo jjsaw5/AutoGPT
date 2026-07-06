@@ -56,6 +56,21 @@ def test_full_pipeline_offline(config):
     assert "SPECULATIVE" in readout
 
 
+def test_placeholder_above_line_blocker_reads_correctly(config):
+    # A GO-grade score (>= go line) on a placeholder chain must report the chain
+    # as the blocker, not a malformed "+-4.3 -> pillar" (regression).
+    ec = _evaluate(make_candidate("SPY", signals={"iv_rank": 12.0}), config)
+    ec.score.composite = 90.0          # well above the GO line
+    ec.gates.results = []              # gates pass
+    ec.score.expected_value = 50.0
+    ec.structure.from_chain = False    # placeholder
+    rank_and_decide([ec], config)
+    readout = render_readout([ec], config)
+    assert ec.decision == Decision.WATCH
+    assert "placeholder chain" in readout
+    assert "+-" not in readout          # no malformed negative gap
+
+
 def test_core_book_has_candidate_table(config):
     # A GO/WATCH candidate renders a compact summary table (header + a row for it)
     # ahead of the detailed block — the new-position analogue of the book table.

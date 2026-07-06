@@ -165,6 +165,13 @@ def _distance_to_go(ec: EvaluatedCandidate, go: float) -> str:
     if ec.decision == Decision.GO:
         return "GO ✓"
     gap = go - ec.effective_composite
+    if gap <= 0:
+        # Score already clears the GO line — the block is execution, not score.
+        # A GO-grade candidate on a placeholder chain is demoted until re-priced
+        # on a real chain (mirrors rank._decide); that's the actual lever.
+        if not ec.structure.from_chain:
+            return "placeholder chain — re-run"
+        return "at GO line — re-check gates/EV"
     return f"+{gap:.1f} → {_weakest_pillar(ec)}"
 
 
