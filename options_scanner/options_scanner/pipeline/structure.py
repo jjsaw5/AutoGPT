@@ -254,21 +254,24 @@ def _defined_risk_spread(
     per_point = 65.0 if credit else 40.0  # $ risk per 1.0 strike width
     width = _fit_width(price, width_pct, per_point, risk_ceiling)
     short_strike = _round_strike(price)
-    opt = "call" if call else "put"
     exp = _exp("0dte" if structure_type == StructureType.ZERO_DTE_SPREAD else "swing")
-
+    # Correct geometry: debit uses the trade-direction type (bull call / bear
+    # put); credit uses the opposite (bull put / bear call).
     if credit:
+        opt = "put" if call else "call"
         credit_amt = round(width * 0.35, 2)
         max_profit = credit_amt * 100
         max_loss = round((width - credit_amt) * 100, 2)
-        # Sell nearer strike, buy protection one width out.
-        long_strike = short_strike + width if call else short_strike - width
+        # Sell near-OTM, buy protection one width further OTM (below for a bull
+        # put, above for a bear call).
+        long_strike = short_strike - width if call else short_strike + width
         legs = [
             Leg("sell", opt, short_strike, exp),
             Leg("buy", opt, long_strike, exp),
         ]
         be = short_strike - credit_amt if call else short_strike + credit_amt
     else:
+        opt = "call" if call else "put"
         debit_amt = round(width * 0.40, 2)
         max_profit = round((width - debit_amt) * 100, 2)
         max_loss = debit_amt * 100

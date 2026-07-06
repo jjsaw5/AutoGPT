@@ -65,8 +65,27 @@ def test_rich_moderate_is_credit_spread(config):
     t.horizon = Horizon.POSITION
     t.conviction = 0.5
     t.iv_rank = 75.0
+    s = select_structure(c, t, config)  # placeholder path (no chain)
+    assert s.structure_type == StructureType.CREDIT_VERTICAL
+    # Bullish credit must be a bull PUT spread (correct geometry), not bear call.
+    assert all(leg.option_type == "put" for leg in s.legs)
+    short = next(l for l in s.legs if l.action == "sell")
+    long = next(l for l in s.legs if l.action == "buy")
+    assert long.strike < short.strike  # protection below the short put
+
+
+def test_bearish_placeholder_credit_is_bear_call(config):
+    c, t = _thesis(config)
+    t.direction = Direction.BEARISH
+    t.vol_regime = VolRegime.RICH
+    t.conviction = 0.5
+    t.iv_rank = 75.0
     s = select_structure(c, t, config)
     assert s.structure_type == StructureType.CREDIT_VERTICAL
+    assert all(leg.option_type == "call" for leg in s.legs)  # bear call
+    short = next(l for l in s.legs if l.action == "sell")
+    long = next(l for l in s.legs if l.action == "buy")
+    assert long.strike > short.strike  # protection above the short call
 
 
 def test_cheap_neutral_no_catalyst_is_skip(config):
