@@ -160,7 +160,11 @@ def _pick_vertical(
     fallback: _VResult | None = None  # narrowest-risk if nothing fits the cap
     for n in range(1, _MAX_WIDTH_STRIKES + 1):
         outer = chain.offset_strike(opt, anchor.strike, sign * n)
-        if outer is None or outer.mid is None or outer.oi <= 0:
+        # A strike is usable if it is *priceable* (has an NBBO mid). Do NOT
+        # require OI > 0: some feeds report OI=0 for very liquid names (e.g. SPY),
+        # where volume + a tight spread prove the market. Liquidity is judged by
+        # G1 with a volume fallback, not by rejecting the strike here.
+        if outer is None or outer.mid is None:
             continue
         if credit:
             short, long = anchor, outer
@@ -187,12 +191,14 @@ def _pick_vertical(
             fallback = candidate
     if not fitting:
         return fallback  # may exceed ceiling; G6 will judge
-    # Among widths that fit the cap, choose the most liquid (max of the
-    # least-liquid leg's OI) so we don't stretch into a dead outer strike;
-    # tie-break toward the wider spread for better reward:risk.
+    # Among widths that fit the cap, choose the most liquid so we don't stretch
+    # into a dead outer strike; use max(OI, volume) per leg so names with a bogus
+    # OI=0 rank by their (real) volume. Tie-break toward the wider spread (R:R).
+    def _liq(c: OptionContract) -> int:
+        return max(c.oi, c.volume)
     return max(
         fitting,
-        key=lambda r: (min(r.short.oi, r.long.oi), abs(r.long.strike - r.short.strike)),
+        key=lambda r: (min(_liq(r.short), _liq(r.long)), abs(r.long.strike - r.short.strike)),
     )
 
 

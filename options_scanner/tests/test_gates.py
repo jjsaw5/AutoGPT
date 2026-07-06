@@ -24,6 +24,22 @@ def _long_call(max_loss=300.0):
     )
 
 
+def test_g1_passes_on_volume_when_oi_is_zero(config):
+    # SPY case: a real, liquid chain reports OI=0 (feed glitch) but healthy
+    # volume. G1 must key off volume, not hard-fail on the bogus zero.
+    from options_scanner.pipeline.gates import _g1_contract_liquidity
+    s = _long_call()
+    s.from_chain = True
+    s.contract_oi = 0            # feed reported zero
+    s.contract_volume = 1500     # but clearly being traded
+    g = config.gates
+    res = _g1_contract_liquidity(make_candidate("SPY"), s, g, {})
+    assert res.passed
+    # And a genuinely dead strike (OI 0, tiny volume) still fails.
+    s.contract_volume = 1
+    assert not _g1_contract_liquidity(make_candidate("SPY"), s, g, {}).passed
+
+
 def test_clean_candidate_passes_gates(config):
     from options_scanner.exits import build_exit_plan
     c = make_candidate()

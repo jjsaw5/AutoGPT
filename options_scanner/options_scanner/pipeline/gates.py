@@ -112,7 +112,15 @@ def _g1_contract_liquidity(candidate, structure, g, ctx) -> GateResult:
         vol = vol if vol is not None else p_vol
     if oi is None and vol is None:
         return GateResult("G1", True, "deferred: confirm OI/vol on live chain")
-    ok = (oi or 0) >= oi_min and (vol or 0) >= vol_min
+    # Some feeds report OI=0 for very liquid names (SPY had vol 700-2600/strike
+    # with OI=0). Treat a zero/absent OI as *unknown*, not illiquid: when OI is
+    # missing, let volume carry the liquidity signal instead of hard-failing.
+    if oi and oi > 0:
+        ok = oi >= oi_min and (vol or 0) >= vol_min
+    elif vol is not None:
+        ok = vol >= vol_min
+    else:
+        return GateResult("G1", True, "deferred: OI unavailable, no volume — confirm live")
     src = "chain" if structure.from_chain else "proxy"
     return GateResult(
         "G1", ok, f"OI={oi} vol={vol} vs min OI={oi_min:g}/vol={vol_min:g} ({src})"

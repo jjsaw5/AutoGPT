@@ -22,14 +22,14 @@ def test_parse_occ():
     assert parse_occ("garbage") is None
 
 
-def _synthetic_chain(spot: float = 100.0) -> OptionChain:
+def _synthetic_chain(spot: float = 100.0, *, oi: int = 2000, volume: int = 800) -> OptionChain:
     contracts: list[OptionContract] = []
     for strike in range(int(spot) - 10, int(spot) + 11):
         # Calls: mid falls, delta falls as strike rises.
         call_mid = max(0.1, (spot - strike) + 5.0)
         call_delta = max(0.02, min(0.98, 0.5 - (strike - spot) * 0.05))
         contracts.append(OptionContract(
-            "call", "2026-07-17", float(strike), oi=2000, volume=800,
+            "call", "2026-07-17", float(strike), oi=oi, volume=volume,
             bid=round(call_mid - 0.1, 2), ask=round(call_mid + 0.1, 2),
             iv=0.3, delta=call_delta,
         ))
@@ -37,11 +37,21 @@ def _synthetic_chain(spot: float = 100.0) -> OptionChain:
         put_mid = max(0.1, (strike - spot) + 5.0)
         put_delta = -max(0.02, min(0.98, 0.5 + (strike - spot) * 0.05))
         contracts.append(OptionContract(
-            "put", "2026-07-17", float(strike), oi=2000, volume=800,
+            "put", "2026-07-17", float(strike), oi=oi, volume=volume,
             bid=round(put_mid - 0.1, 2), ask=round(put_mid + 0.1, 2),
             iv=0.3, delta=put_delta,
         ))
     return OptionChain("TEST", "2026-07-17", spot, 15, contracts)
+
+
+def test_vertical_realizes_when_oi_is_zero_but_volume_present():
+    # SPY case: a feed reports OI=0 on liquid strikes (real volume). The vertical
+    # must still realize from the real chain, not fall back to a placeholder.
+    from options_scanner.pipeline.structure_chain import _pick_vertical
+    chain = _synthetic_chain(100.0, oi=0, volume=800)
+    r = _pick_vertical(chain, "call", credit=False, sign=1, ceiling=10_000.0)
+    assert r is not None                      # not rejected for OI=0
+    assert r.long.mid is not None and r.short.mid is not None
 
 
 def _plan_for(config, **kw):
