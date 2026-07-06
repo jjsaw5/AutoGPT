@@ -40,6 +40,24 @@ def _letter(score: float) -> str:
     return "F"
 
 
+_MIN_CLOSE_CONVICTION = 0.5   # below this, a misaligned thesis is WATCH, not CLOSE
+
+
+def _vol_fit(is_long_premium: bool, iv_rank: Optional[float], vol_regime: str) -> float:
+    """Vol-regime fit, ramped by IV rank so grades don't cliff at IVR=50.
+
+    Long premium wants cheap vol (reward low IVR, penalize high); short premium
+    the reverse. Falls back to the discrete regime label when IVR is missing.
+    """
+    if iv_rank is None:
+        if is_long_premium:
+            return 12 if vol_regime == "cheap" else (-12 if vol_regime == "rich" else 0)
+        return 10 if vol_regime == "rich" else (-10 if vol_regime == "cheap" else 0)
+    if is_long_premium:
+        return _clamp((40 - iv_rank) / 40 * 12, -12, 12)   # +12 @IVR0 · 0 @IVR40 · -12 @IVR80
+    return _clamp((iv_rank - 50) / 40 * 10, -10, 10)       # -10 @IVR10 · 0 @IVR50 · +10 @IVR90
+
+
 def review_position(
     ticker: str,
     *,
@@ -51,6 +69,8 @@ def review_position(
     thesis_dir: int,            # scanner's current direction on the underlying
     thesis_conviction: float,
     vol_regime: str,            # 'cheap' | 'fair' | 'rich'
+    iv_rank: Optional[float] = None,   # for the ramped vol penalty
+    driver: str = "signals",           # what's driving the thesis (for reasons)
 ) -> PositionReview:
     aligned = (direction == 0 and thesis_dir == 0) or (direction != 0 and thesis_dir == direction)
     misaligned = direction != 0 and thesis_dir == -direction
@@ -65,10 +85,7 @@ def review_position(
             score += 22 * thesis_conviction
         elif thesis_dir == -direction:
             score -= 28 * thesis_conviction
-    if is_long_premium:
-        score += 12 if vol_regime == "cheap" else (-12 if vol_regime == "rich" else 0)
-    else:
-        score += 10 if vol_regime == "rich" else (-10 if vol_regime == "cheap" else 0)
+    score += _vol_fit(is_long_premium, iv_rank, vol_regime)
     if pnl_pct is not None:
         score += _clamp(pnl_pct * 30, -15, 15)
     if earnings_in_hold:  # penalty scales with proximity, not a flat hit
@@ -80,7 +97,11 @@ def review_position(
     if earnings_imminent:
         action, reason = "CLOSE", f"earnings in {d2e}d — close long premium before the IV crush"
     elif misaligned and (pnl_pct is None or pnl_pct < 0):
-        action, reason = "CLOSE", "flow flipped against the position"
+        # Only hard-close on a *conviction* reversal; a weak flip is a WATCH.
+        if thesis_conviction >= _MIN_CLOSE_CONVICTION:
+            action, reason = "CLOSE", f"{driver} turned against the position (conviction {thesis_conviction:.2f})"
+        else:
+            action, reason = "WATCH", f"{driver} weakly against (conviction {thesis_conviction:.2f}) — tighten stop, not yet a close"
     elif grade in ("F", "D-"):
         action, reason = "CLOSE", f"setup broken (grade {grade})"
     elif pnl_pct is not None and pnl_pct >= 0.40 and aligned:

@@ -122,11 +122,26 @@ class Thesis:
     iv: float | None = None             # current implied vol
     rv: float | None = None             # realized vol
     supporting_signals: list[str] = field(default_factory=list)
+    # Direction-vote components (-1..+1) so callers can name the real driver.
+    flow_vote: float = 0.0
+    tech_vote: float = 0.0
+    dp_vote: float = 0.0
     notes: str = ""
 
     @property
     def is_earnings_play(self) -> bool:
         return self.catalyst == Catalyst.EARNINGS
+
+    def direction_driver(self) -> str:
+        """Which signal is most responsible for the net direction (for reasons)."""
+        if self.direction == Direction.NEUTRAL:
+            return "mixed signals"
+        want_pos = self.direction == Direction.BULLISH
+        votes = {"flow": self.flow_vote, "technicals": self.tech_vote, "dark pool": self.dp_vote}
+        matching = {k: v for k, v in votes.items() if v != 0 and (v > 0) == want_pos}
+        if not matching:
+            return "mixed signals"
+        return max(matching, key=lambda k: abs(matching[k]))
 
     def regime_iv_vs_rv(self) -> float | None:
         """0-100 where higher = IV cheap vs RV (favors buying premium).

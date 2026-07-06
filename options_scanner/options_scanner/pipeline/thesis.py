@@ -16,6 +16,9 @@ from ..config import Config
 from ..expected_move import estimate_expected_move
 from ..flow import analyze_flow
 from ..technicals import compute_technicals, late_entry_penalty, technical_vote
+
+# Direction-vote weights — options flow (the edge) outweighs pure technicals.
+_FLOW_W, _TECH_W, _DP_W = 1.5, 1.0, 1.0
 from ..models import (
     Candidate,
     Catalyst,
@@ -107,8 +110,12 @@ def build_thesis(candidate: Candidate, config: Config) -> Thesis:
     tech = technical_vote(tech_data) if tech_data else _technical_bias(signals)
     dp = _darkpool_bias(signals)
 
-    votes = [v for v in (flow_vote, tech, dp) if v != 0.0]
-    net_vote = sum(votes) / len(votes) if votes else 0.0
+    # Weighted vote — the edge is options FLOW, so it carries more say than pure
+    # technicals or dark-pool skew (technicals inform timing, they don't solo-flip
+    # the thesis against the flow).
+    weighted = [(flow_vote, _FLOW_W), (tech, _TECH_W), (dp, _DP_W)]
+    nz = [(v, w) for v, w in weighted if v != 0.0]
+    net_vote = sum(v * w for v, w in nz) / sum(w for _, w in nz) if nz else 0.0
     agreement = _agreement(flow_vote, tech, dp)
 
     if net_vote > 0.15:
@@ -188,6 +195,9 @@ def build_thesis(candidate: Candidate, config: Config) -> Thesis:
         iv=iv,
         rv=rv,
         supporting_signals=supporting,
+        flow_vote=round(flow_vote, 3),
+        tech_vote=round(tech, 3),
+        dp_vote=round(dp, 3),
     )
 
 

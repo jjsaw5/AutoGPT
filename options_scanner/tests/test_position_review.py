@@ -19,10 +19,25 @@ def test_aligned_bullish_long_cheap_holds():
     assert r.grade[0] in ("A", "B")
 
 
-def test_flow_flipped_against_and_losing_closes():
-    r = _r(direction=1, thesis_dir=-1, pnl_pct=-0.15)
+def test_conviction_reversal_closes():
+    # strong opposing conviction => CLOSE, and the reason names the driver
+    r = _r(direction=1, thesis_dir=-1, pnl_pct=-0.15, thesis_conviction=0.7, driver="technicals")
     assert r.action == "CLOSE"
-    assert "flipped" in r.reason
+    assert "technicals" in r.reason
+
+
+def test_weak_reversal_watches_not_closes():
+    # DKNG case: opposed but low conviction => WATCH (tighten), not a hard CLOSE
+    r = _r(direction=1, thesis_dir=-1, pnl_pct=-0.08, thesis_conviction=0.37, driver="technicals")
+    assert r.action == "WATCH"
+    assert "tighten" in r.reason
+
+
+def test_vol_penalty_ramps_with_iv_rank():
+    # no cliff: IVR 47 is a mild penalty, IVR 75 a big one (long premium)
+    mild = _r(iv_rank=47, vol_regime="fair")
+    steep = _r(iv_rank=75, vol_regime="rich")
+    assert steep.score < mild.score
 
 
 def test_earnings_through_long_premium_closes():
