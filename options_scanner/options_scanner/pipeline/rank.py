@@ -92,12 +92,17 @@ def _decide(
     composite = ec.effective_composite
     gates_pass = ec.gates.passed
     ev_positive = ec.score.expected_value > 0
+    # GO must be executable: a placeholder structure is priced off spot + width
+    # heuristics, not real quotes, so its composite/POP/EV aren't actionable.
+    # A throttled chain fetch shouldn't mint a GO we can't actually take —
+    # demote to WATCH ("promising; re-run for a real chain before acting").
+    chain_real = ec.structure.from_chain
 
-    # All three required for GO (§6b).
-    if composite >= go and gates_pass and ev_positive:
+    # All required for GO (§6b): score, gates, positive EV, and a real chain.
+    if composite >= go and gates_pass and ev_positive and chain_real:
         ec.decision = Decision.GO
         _size(ec, go, config)
-    elif composite >= watch:
+    elif composite >= watch or (composite >= go and gates_pass and ev_positive):
         ec.decision = Decision.WATCH
         ec.suggested_size = 0.0
         ec.size_tier = "none"
@@ -107,6 +112,9 @@ def _decide(
         ec.size_tier = "none"
 
     ec.why = _why(ec)
+    if ec.decision == Decision.WATCH and not chain_real and composite >= go \
+            and gates_pass and ev_positive:
+        ec.why = f"placeholder chain — GO-grade score; re-run for a real chain. {ec.why}"
     ec.biggest_risk = _biggest_risk(ec)
 
 

@@ -67,6 +67,25 @@ def test_go_requires_all_three(config):
         assert ec.suggested_size > 0
 
 
+def test_placeholder_chain_cannot_go(config):
+    # A GO-grade candidate on a *placeholder* chain is demoted to WATCH: its
+    # pricing is synthetic (spot+width), so the composite/EV aren't executable.
+    ec = _evaluate(make_candidate("AAPL", signals={"iv_rank": 10.0}), config)
+    ec.score.composite = 90.0
+    ec.gates.results = []          # no failing gates → gates.passed is True
+    ec.score.expected_value = 50.0
+
+    ec.structure.from_chain = False
+    rank_and_decide([ec], config)
+    assert ec.decision == Decision.WATCH
+    assert "placeholder chain" in ec.why
+
+    # Same candidate, real chain → GO stands.
+    ec.structure.from_chain = True
+    rank_and_decide([ec], config)
+    assert ec.decision == Decision.GO
+
+
 def test_sizing_respects_ceiling(config):
     ec = _evaluate(make_candidate("AAPL", signals={"iv_rank": 5.0}), config)
     rank_and_decide([ec], config)
