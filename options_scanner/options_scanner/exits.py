@@ -60,7 +60,9 @@ class ExitPlan:
 
 def build_exit_plan(structure: Structure, thesis: Thesis) -> ExitPlan | None:
     st = structure.structure_type
-    if st == StructureType.NONE or structure.max_loss is None:
+    # No plan for a no-trade or degenerate (zero/none risk) structure — G11 then
+    # blocks it, which is the right outcome for a malformed structure.
+    if st == StructureType.NONE or not structure.max_loss or structure.max_loss <= 0:
         return None
 
     risk = structure.max_loss

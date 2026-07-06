@@ -53,6 +53,12 @@ def test_is_shadow_candidate(config):
     assert not is_shadow_candidate(real_fail, config)
     # low composite => not a shadow
     assert not is_shadow_candidate(_ec(composite=40, decision=Decision.PASS), config)
+    # clean WATCH: passes all gates, positive EV, above the watch line => tracked
+    clean_watch = _ec(composite=66, ev=40, decision=Decision.WATCH)
+    assert is_shadow_candidate(clean_watch, config)
+    # a WATCH with a failing gate is NOT tracked
+    dirty_watch = _ec(composite=66, ev=40, decision=Decision.WATCH, gate_fail=["G2"])
+    assert not is_shadow_candidate(dirty_watch, config)
 
 
 def test_record_and_dedupe(config, tmp_path):

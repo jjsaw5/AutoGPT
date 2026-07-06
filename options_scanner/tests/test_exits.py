@@ -47,6 +47,11 @@ def test_no_plan_for_no_trade():
     assert build_exit_plan(_struct(StructureType.NONE, None, None), _thesis()) is None
 
 
+def test_no_plan_for_zero_risk():
+    # degenerate structure (max_loss == 0) must not crash — returns None
+    assert build_exit_plan(_struct(StructureType.CREDIT_VERTICAL, 100.0, 0.0), _thesis()) is None
+
+
 def test_zerodte_plan_hard_stops():
     p = build_exit_plan(_struct(StructureType.ZERO_DTE_SPREAD), _thesis(horizon=Horizon.INTRADAY))
     assert p.is_complete()

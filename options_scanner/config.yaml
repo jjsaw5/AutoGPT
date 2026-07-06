@@ -80,6 +80,12 @@ structure:
   ivr_rich_min: 50                # IV rank >= this => "rich" (sell premium)
   leaps_delta_target: [0.70, 0.80]  # deep-ITM stock replacement
 
+journal:
+  # Also shadow-track gate-passing, positive-EV WATCH candidates (not just GO /
+  # budget-blocked). Needed to accumulate calibration data when GOs are rare and
+  # to test whether WATCH wins as often as GO. Set false for GO-only tracking.
+  shadow_watch: true
+
 speculative_bucket:
   separated: true
   quality_bar_min_composite: 75   # higher bar; surface only strong spec setups

@@ -94,14 +94,32 @@ def setup_key(ec: EvaluatedCandidate) -> str:
 
 
 def is_shadow_candidate(ec: EvaluatedCandidate, config: Config) -> bool:
-    """GO, or GO-worthy but blocked ONLY by the risk caps G6/G7 (budget-blocked)."""
+    """Which flagged setups to shadow-track for calibration:
+
+    1. actual GO;
+    2. GO-worthy but blocked ONLY by the risk caps G6/G7 (budget-blocked);
+    3. (when ``journal.shadow_watch``) clean WATCH — passes ALL gates, positive
+       EV, above the WATCH line. This is what lets the loop accumulate data when
+       GOs are rare, and tests whether WATCH wins as often as GO.
+    """
     from .models import Decision
+
+    # Only track structures built from the live chain — they carry real strikes,
+    # expiry, and per-leg entry mids, so they can actually be resolved later.
+    # Placeholder structures have neither and would pollute the ledger.
+    if not ec.structure.from_chain or not ec.structure.expiry:
+        return False
 
     if ec.decision == Decision.GO:
         return True
-    if ec.score.composite >= config.go_threshold and ec.score.expected_value > 0:
+    if ec.score.expected_value <= 0:
+        return False
+    if ec.effective_composite >= config.go_threshold:
         fails = {f.gate_id for f in ec.gates.failures}
         if fails and fails <= {"G6", "G7"}:
+            return True
+    if config.section("journal").get("shadow_watch", True):
+        if ec.gates.passed and ec.effective_composite >= config.watch_threshold:
             return True
     return False
 
