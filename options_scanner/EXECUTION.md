@@ -30,6 +30,23 @@ trade, or approve a specific trade the agent proposed.** That's it.
 6. **Log** — record the placed order to the journal (`log_placed_orders`), so
    the taken-trade track and calibration see the real fill.
 
+## Capability limits (what the agent CAN actually place)
+
+The Robinhood MCP places **single-leg options only** — Level 2 strategies: long
+calls/puts, covered calls, cash-secured puts. It **cannot place multi-leg
+structures** (spreads, iron condors, butterflies) — those are Robinhood-app-only,
+and require a **Level 3** account.
+
+Consequence for this book:
+- ✅ Agent-placeable: a **single-leg** trade (e.g. a long call/put) in the
+  **Agentic** account (Level 2, agentic-enabled).
+- ❌ NOT agent-placeable: **any spread/condor/straddle** — most of what the
+  scanner surfaces. Multi-leg trades are **manual**, in the Robinhood app, in a
+  Level-3 account (your Individual account). The agent gives you the ticket.
+
+So "the agent can place trades now" means single-leg, in the Agentic account.
+Multi-leg structures still route to you.
+
 ## Account constraint (important)
 
 The agent can only act on accounts where **`agentic_allowed = true`**:

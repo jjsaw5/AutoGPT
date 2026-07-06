@@ -112,6 +112,10 @@ execution:
   require_preview: true           # always review_option_order and show it before placing
   tradable_accounts:              # only accounts this agent is permitted to act on
     - "992952861"                 # Agentic (agentic_allowed=true). Individual is agent-blocked.
+  # Capability limit: the Robinhood MCP places SINGLE-LEG options only (Level 2:
+  # long calls/puts, covered calls, cash-secured puts). Multi-leg structures
+  # (spreads, condors) are Robinhood-app-only + need Level 3 -> always manual.
+  agent_placeable: single_leg_only
   log_placed_orders: true         # record every placed order to the journal
 
 data:
