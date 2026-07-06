@@ -99,6 +99,7 @@ def _render_row(
     )
     return [
         header,
+        f"     {_entry_line(ec)}",
         f"     legs: {ec.structure.legs_str()}",
         f"     thesis: {t.direction.value} | vol={t.vol_regime.value} | catalyst={t.catalyst.value} ({dtc})",
         f"     IVR {ivr} | {pillars} | POP {s.pop:.0%} | EV ${s.expected_value:.0f}",
@@ -107,6 +108,37 @@ def _render_row(
         f"     why: {ec.why}",
         f"     risk: {ec.biggest_risk}",
     ] + ([f"     exit: {ec.exit_plan.summary()}"] if ec.exit_plan else [])
+
+
+_CREDIT_FAMILY = {StructureType.CREDIT_VERTICAL, StructureType.IRON_CONDOR}
+
+
+def _entry_line(ec: EvaluatedCandidate) -> str:
+    """The exact play — 'here is the trade to put on' (GO) or why we're waiting."""
+    st = ec.structure
+    credit = st.structure_type in _CREDIT_FAMILY
+    net = st.max_profit if credit else st.max_loss
+    net_str = f"~${net:.0f} {'credit' if credit else 'debit'}" if net is not None else "—"
+    verb = "SELL" if credit else "BUY"
+    play = f"{verb} {ec.ticker} {st.structure_type.value} {st.legs_str()}  for {net_str}"
+
+    if ec.decision == Decision.GO:
+        contracts = 1
+        if st.max_loss and ec.suggested_size:
+            contracts = max(1, round(ec.suggested_size / st.max_loss))
+        return f"▶ ENTRY: {play} · {contracts}×  (${ec.suggested_size:.0f} risk)"
+
+    # WATCH — say plainly what's holding it back.
+    if not ec.gates.passed:
+        blocked = ", ".join(f.gate_id for f in ec.gates.failures)
+        reason = f"gated on {blocked}"
+    elif ec.effective_composite < 72:
+        reason = f"score {ec.effective_composite:.0f} < 72"
+    elif ec.score.expected_value <= 0:
+        reason = "EV ≤ 0"
+    else:
+        reason = "below GO bar"
+    return f"○ WATCH: would {play.lower()} — waiting ({reason})"
 
 
 def _render_summary(
