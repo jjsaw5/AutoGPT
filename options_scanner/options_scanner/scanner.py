@@ -31,6 +31,7 @@ from .pipeline import (
 )
 from .pipeline.chain import build_chain
 from .market_context import build_market_regime
+from .exits import build_exit_plan
 
 logger = logging.getLogger(__name__)
 
@@ -133,14 +134,17 @@ class Scanner:
                 except Exception as exc:  # never let chain issues abort a scan
                     logger.warning("chain build failed for %s: %s", candidate.ticker, exc)
             structure = select_structure(candidate, thesis, self.config, chain=chain)
+            exit_plan = build_exit_plan(structure, thesis)
+            gate_ctx = {**(context or {}), "exit_plan": exit_plan}
             gates = evaluate_gates(
-                candidate, thesis, structure, self.config, context=context
+                candidate, thesis, structure, self.config, context=gate_ctx
             )
             score = score_candidate(candidate, thesis, structure, self.config)
             evaluated.append(
                 EvaluatedCandidate(
                     candidate=candidate, thesis=thesis,
                     structure=structure, score=score, gates=gates,
+                    exit_plan=exit_plan,
                 )
             )
 

@@ -106,7 +106,7 @@ def _render_row(
         f"     gates: {ec.gates.flags()} | size: {size}",
         f"     why: {ec.why}",
         f"     risk: {ec.biggest_risk}",
-    ]
+    ] + ([f"     exit: {ec.exit_plan.summary()}"] if ec.exit_plan else [])
 
 
 def _render_summary(

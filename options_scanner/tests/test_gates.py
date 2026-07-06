@@ -25,9 +25,18 @@ def _long_call(max_loss=300.0):
 
 
 def test_clean_candidate_passes_gates(config):
+    from options_scanner.exits import build_exit_plan
     c = make_candidate()
-    report = evaluate_gates(c, _thesis(), _long_call(), config)
+    t, s = _thesis(), _long_call()
+    report = evaluate_gates(c, t, s, config, context={"exit_plan": build_exit_plan(s, t)})
     assert report.passed, report.flags()
+
+
+def test_g11_blocks_without_exit_plan(config):
+    c = make_candidate()
+    report = evaluate_gates(c, _thesis(), _long_call(), config)  # no exit plan
+    g11 = next(r for r in report.results if r.gate_id == "G11")
+    assert not g11.passed
 
 
 def test_g4_blocks_untagged_long_premium_through_earnings(config):

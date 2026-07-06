@@ -234,6 +234,7 @@ class EvaluatedCandidate:
     why: str = ""                    # one-line "why this trade"
     biggest_risk: str = ""
     regime_adj: float = 0.0          # market-regime nudge applied to the composite
+    exit_plan: Any = None            # ExitPlan (targets/stops/invalidation)
 
     @property
     def ticker(self) -> str:

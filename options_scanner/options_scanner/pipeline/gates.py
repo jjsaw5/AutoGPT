@@ -76,6 +76,7 @@ def evaluate_gates(
         _g8_data_freshness(candidate, ctx),
         _g9_assignment_risk(candidate, structure, g, ctx),
         _g10_intraday_margin(structure, g, ctx),
+        _g11_exit_plan(structure, ctx),
     ]
     return GateReport(results=results)
 
@@ -240,6 +241,17 @@ def _dte(expiry_iso: str) -> int | None:
     except (ValueError, TypeError):
         return None
     return (exp - datetime.now(timezone.utc).date()).days
+
+
+def _g11_exit_plan(structure, ctx) -> GateResult:
+    """No exit plan, no trade. Every tradeable structure must carry a complete
+    plan (profit target + stop + invalidation) before it can GO."""
+    if structure.structure_type == StructureType.NONE:
+        return GateResult("G11", True, "no trade")
+    plan = ctx.get("exit_plan")
+    if plan is None or not plan.is_complete():
+        return GateResult("G11", False, "no complete exit plan — no trade")
+    return GateResult("G11", True, "exit plan defined")
 
 
 def _g10_intraday_margin(structure, g, ctx) -> GateResult:

@@ -21,13 +21,16 @@ from .conftest import make_candidate
 
 
 def _evaluate(candidate, config, context=None):
+    from options_scanner.exits import build_exit_plan
     thesis = build_thesis(candidate, config)
     structure = select_structure(candidate, thesis, config)
-    gates = evaluate_gates(candidate, thesis, structure, config, context=context)
+    exit_plan = build_exit_plan(structure, thesis)
+    gate_ctx = {**(context or {}), "exit_plan": exit_plan}
+    gates = evaluate_gates(candidate, thesis, structure, config, context=gate_ctx)
     score = score_candidate(candidate, thesis, structure, config)
     return EvaluatedCandidate(
         candidate=candidate, thesis=thesis, structure=structure,
-        score=score, gates=gates,
+        score=score, gates=gates, exit_plan=exit_plan,
     )
 
 
