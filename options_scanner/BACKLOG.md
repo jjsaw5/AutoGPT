@@ -80,6 +80,15 @@ just delete) as they ship. Priority is a rough guide, not a promise.*
 - [ ] **Rate-limit call tally** *(low).* Log `FMP: N / UW: M calls` per scan so
   usage is visible against the dashboards.
 
+- [x] **Robinhood confirmation layer** *(shipped).* `confirm.py` re-prices an
+  actionable candidate's exact legs on live Robinhood quotes and returns a
+  verdict — CONFIRMED / DEGRADED / REJECTED — on real cost, reward:risk, EV, and
+  liquidity. Agent-gated (I pull the quotes via MCP, like the book review), so
+  it runs on GO/near-GO candidates in interactive sessions, not headless CI.
+  Validated live: NFLX GO confirmed ($380cr/$220 risk, EV +$63). *Follow-ups:*
+  (1) auto-run it on the top-N candidates as a standard session section;
+  (2) persist confirmations to history/Turso alongside candidates.
+
 ## 3. Blocked on data (the calibration loop)
 
 *These can't be done well until the journal has a real sample of resolved
