@@ -103,7 +103,16 @@ catalysts:
   macro_calendar_file: macro_calendar.yaml   # curated FOMC/CPI/NFP (maintain quarterly)
 
 execution:
-  mode: recommend_only            # human confirms every order
+  # human_approved: the agent MAY place an order, but ONLY when the human
+  # explicitly asks for / approves that specific trade. No automated trading,
+  # ever. See EXECUTION.md for the full protocol.
+  mode: human_approved
+  auto_trade: false               # HARD: never place an order unprompted / on a schedule
+  require_explicit_request: true  # a specific human ask or approval is required per order
+  require_preview: true           # always review_option_order and show it before placing
+  tradable_accounts:              # only accounts this agent is permitted to act on
+    - "992952861"                 # Agentic (agentic_allowed=true). Individual is agent-blocked.
+  log_placed_orders: true         # record every placed order to the journal
 
 data:
   unusual_whales_tier: base_api   # polling; no websocket/kafka/historical tape

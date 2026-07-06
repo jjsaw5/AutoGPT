@@ -139,8 +139,12 @@ persisted.
 
 ## The contract
 
-- **Recommend-only.** Every GO and every review action (CLOSE/TRIM/…) is a
-  hypothesis for a human to confirm. No order is placed anywhere in a session.
+- **Sessions are recommend-only.** Every GO and every review action
+  (CLOSE/TRIM/…) is a hypothesis for a human to confirm. **No session, scan,
+  schedule, or CI run ever places an order.** Execution is a separate,
+  explicitly-invoked action governed by **EXECUTION.md** — the agent may place a
+  trade only when you explicitly ask for/approve that specific order, never
+  automatically, and only in allow-listed (agentic-enabled) accounts.
 - **Nothing depends on phrasing.** "Run a session" = this runbook, verbatim.
 - **A skipped stage is visible.** Missing positions → an explicit scan-only note,
   never a quietly incomplete run.
