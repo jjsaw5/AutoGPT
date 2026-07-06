@@ -69,6 +69,30 @@ def test_rich_moderate_is_credit_spread(config):
     assert s.structure_type == StructureType.CREDIT_VERTICAL
 
 
+def test_cheap_neutral_no_catalyst_is_skip(config):
+    from options_scanner.models import Catalyst
+    c, t = _thesis(config)
+    t.direction = Direction.NEUTRAL
+    t.vol_regime = VolRegime.CHEAP
+    t.catalyst = Catalyst.FLOW_ONLY
+    t.days_to_catalyst = None
+    s = select_structure(c, t, config)
+    assert s.structure_type == StructureType.NONE  # no trade, not a condor
+
+
+def test_cheap_neutral_with_catalyst_is_straddle(config):
+    from options_scanner.models import Catalyst
+    c, t = _thesis(config)
+    t.direction = Direction.NEUTRAL
+    t.vol_regime = VolRegime.CHEAP
+    t.catalyst = Catalyst.EARNINGS
+    t.days_to_catalyst = 5
+    s = select_structure(c, t, config)
+    assert s.structure_type == StructureType.LONG_STRADDLE
+    assert len(s.legs) == 2
+    assert all(leg.action == "buy" for leg in s.legs)
+
+
 def test_rich_neutral_is_iron_condor(config):
     c, t = _thesis(config)
     t.direction = Direction.NEUTRAL

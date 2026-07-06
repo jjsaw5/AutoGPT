@@ -81,6 +81,14 @@ def _normalize_pool_ev(evaluated: list[EvaluatedCandidate], config: Config) -> N
 def _decide(
     ec: EvaluatedCandidate, go: float, watch: float, config: Config
 ) -> None:
+    # No-trade structures (e.g. cheap-vol neutral with no catalyst) are PASS.
+    if ec.structure.structure_type == StructureType.NONE:
+        ec.decision = Decision.PASS
+        ec.suggested_size = 0.0
+        ec.size_tier = "none"
+        ec.why = ec.structure.rationale or "no tradeable structure"
+        ec.biggest_risk = "—"
+        return
     composite = ec.effective_composite
     gates_pass = ec.gates.passed
     ev_positive = ec.score.expected_value > 0
@@ -104,9 +112,8 @@ def _decide(
 
 def _size(ec: EvaluatedCandidate, go: float, config: Config) -> None:
     """Size scales with score above the GO line, capped by G6 tiered ceilings."""
-    acct = config.account
-    standard = float(acct.get("risk_standard_max", 200))
-    high = float(acct.get("risk_high_conviction_max", 500))
+    standard = config.risk_standard()
+    high = config.risk_high_conviction()
 
     composite = ec.effective_composite
     fraction = min(1.0, (composite - go) / max(1.0, 100.0 - go))

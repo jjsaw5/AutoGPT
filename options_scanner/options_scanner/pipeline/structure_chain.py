@@ -25,8 +25,13 @@ _MAX_WIDTH_STRIKES = 8  # widest vertical to consider, in strike steps
 
 def realize_from_chain(plan, chain: OptionChain, ceiling: float) -> Structure | None:
     kind = plan.kind
+    if kind == "skip":
+        return Structure(structure_type=StructureType.NONE, legs=[], max_loss=None,
+                         max_profit=None, rationale=plan.rationale)
     if kind == "long":
         return _long(plan, chain, ceiling)
+    if kind == "straddle":
+        return _straddle(chain, plan.rationale)
     if kind == "leaps":
         return _leaps(plan, chain, ceiling)
     if kind == "iron_condor":
@@ -71,6 +76,31 @@ def _long(plan, chain: OptionChain, ceiling: float) -> Structure | None:
         short_delta=abs(c.delta) if c.delta is not None else None,
         expiry=c.expiry,
         from_chain=True,
+    )
+
+
+def _straddle(chain: OptionChain, rationale: str) -> Structure | None:
+    call = chain.atm("call")
+    put = chain.atm("put")
+    if call is None or put is None or call.mid is None or put.mid is None:
+        return None
+    debit = (call.mid + put.mid) * 100
+    total = call.mid + put.mid
+    oi = min(call.oi, put.oi)
+    vol = min(call.volume, put.volume)
+    spreads = [s for s in (call.spread_pct, put.spread_pct) if s is not None]
+    return Structure(
+        structure_type=StructureType.LONG_STRADDLE,
+        legs=[Leg("buy", "call", call.strike, call.expiry, mid=call.mid),
+              Leg("buy", "put", put.strike, put.expiry, mid=put.mid)],
+        max_profit=round(debit * _LONG_TARGET_RR, 2),
+        max_loss=round(debit, 2),
+        breakevens=[round(put.strike - total, 2), round(call.strike + total, 2)],
+        rationale=rationale,
+        is_defined_risk=True,
+        contract_oi=oi, contract_volume=vol,
+        spread_pct=(max(spreads) if spreads else None),
+        expiry=call.expiry, from_chain=True,
     )
 
 

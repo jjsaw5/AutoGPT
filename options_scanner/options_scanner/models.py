@@ -79,6 +79,7 @@ class StructureType(str, Enum):
     LONG_CALL = "long_call"
     LONG_PUT = "long_put"
     LEAPS = "leaps"
+    LONG_STRADDLE = "long_straddle"
     DEBIT_VERTICAL = "debit_vertical"
     CREDIT_VERTICAL = "credit_vertical"
     IRON_CONDOR = "iron_condor"

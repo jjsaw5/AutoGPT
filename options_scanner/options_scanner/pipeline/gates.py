@@ -176,7 +176,7 @@ def _g5_zerodte_budget(structure, config, ctx) -> GateResult:
 
 
 def _g6_per_trade_risk(structure, config) -> GateResult:
-    ceiling = float(config.account.get("risk_high_conviction_max", 500))
+    ceiling = config.risk_high_conviction()
     max_loss = structure.max_loss
     if max_loss is None:
         return GateResult("G6", True, "deferred: size on live chain")
@@ -185,8 +185,8 @@ def _g6_per_trade_risk(structure, config) -> GateResult:
 
 
 def _g7_aggregate_risk(structure, config, ctx) -> GateResult:
-    max_open = float(config.account.get("max_open_risk", 2000))
-    max_pos = int(config.account.get("max_positions", 6))
+    max_open = config.max_open_risk()
+    max_pos = config.max_positions()
     open_risk = float(ctx.get("open_risk", 0))
     open_positions = int(ctx.get("open_positions", 0))
     new_risk = structure.max_loss or 0.0

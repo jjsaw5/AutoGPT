@@ -115,9 +115,9 @@ def _render_summary(
     gos = [ec for ec in core_book if ec.decision == Decision.GO]
     new_risk = sum(ec.suggested_size for ec in gos)
     open_risk = float(ctx.get("open_risk", 0))
-    max_open = float(config.account.get("max_open_risk", 2000))
+    max_open = config.max_open_risk()
     open_positions = int(ctx.get("open_positions", 0))
-    max_pos = int(config.account.get("max_positions", 6))
+    max_pos = config.max_positions()
     used = int(ctx.get("zerodte_used", 0))
     cap = int(config.budget.get("zerodte_per_week", 3))
 

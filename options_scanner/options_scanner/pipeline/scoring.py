@@ -23,6 +23,7 @@ _BUY_PREMIUM = {
     StructureType.LONG_CALL,
     StructureType.LONG_PUT,
     StructureType.LEAPS,
+    StructureType.LONG_STRADDLE,
     StructureType.DEBIT_VERTICAL,
 }
 _SELL_PREMIUM = {

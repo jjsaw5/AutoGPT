@@ -3,11 +3,18 @@
 # Secrets are NOT stored here — see .env.example.
 
 account:
-  size: 5000
-  risk_standard_max: 200          # G6 standard per-trade risk ($, 2-4% of account)
-  risk_high_conviction_max: 500   # G6 ceiling, top-decile composite only
-  max_open_risk: 2000             # G7 aggregate open risk cap ($, 40%)
+  size: 5000                      # base account size (repoint to real balance anytime)
+  # Percentage-based sizing (of account size). Less aggressive per review.
+  risk_standard_pct: 0.04         # 4%  = $200 @ $5k  (normal trade)
+  risk_high_conviction_pct: 0.08  # 8%  = $400 @ $5k  (top-decile ceiling; was 10%/$500)
+  speculative_pct: 0.03           # 3%  = $150 @ $5k  (speculative / 0DTE)
+  max_open_pct: 0.30              # 30% = $1500 @ $5k (aggregate open risk; was 40%/$2000)
+  max_correlated_pct: 0.15        # 15% = $750 @ $5k  (per-underlying/sector cluster)
   max_positions: 6                # G7 concurrent position cap
+  # Legacy fixed-$ fallbacks (used only if the _pct knobs above are absent):
+  risk_standard_max: 200
+  risk_high_conviction_max: 500
+  max_open_risk: 2000
 
 budget:
   zerodte_per_week: 3             # G5 — self-imposed discipline (PDT cap eliminated 6/4/2026)

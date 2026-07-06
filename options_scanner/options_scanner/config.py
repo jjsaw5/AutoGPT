@@ -98,6 +98,29 @@ class Config:
         w = self.scoring.get("weights", {})
         return {k: float(v) for k, v in w.items()}
 
+    # --- sizing (percentage-based, of account size, with $ fallbacks) ---------
+    @property
+    def account_size(self) -> float:
+        return float(self.account.get("size", 5000))
+
+    def _risk_dollars(self, pct_key: str, dollar_key: str, dollar_default: float) -> float:
+        pct = self.account.get(pct_key)
+        if pct is not None:
+            return round(self.account_size * float(pct), 2)
+        return float(self.account.get(dollar_key, dollar_default))
+
+    def risk_standard(self) -> float:
+        return self._risk_dollars("risk_standard_pct", "risk_standard_max", 200)
+
+    def risk_high_conviction(self) -> float:
+        return self._risk_dollars("risk_high_conviction_pct", "risk_high_conviction_max", 500)
+
+    def max_open_risk(self) -> float:
+        return self._risk_dollars("max_open_pct", "max_open_risk", 2000)
+
+    def max_positions(self) -> int:
+        return int(self.account.get("max_positions", 6))
+
     @property
     def go_threshold(self) -> float:
         return float(self.scoring.get("go_threshold", 72))

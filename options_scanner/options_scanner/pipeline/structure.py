@@ -16,6 +16,7 @@ from functools import partial
 from ..config import Config
 from ..models import (
     Candidate,
+    Catalyst,
     Direction,
     Horizon,
     Leg,
@@ -64,8 +65,10 @@ def plan_structure(thesis: Thesis, config: Config) -> Plan:
         return Plan("zerodte", call, credit=(regime == VolRegime.RICH), width_pct=0.02,
                     rationale="0DTE defined-risk (top-liquidity, weekly cap applies)")
 
-    # Earnings overrides.
-    if thesis.is_earnings_play and thesis.days_to_catalyst is not None \
+    # Earnings overrides (directional only — a neutral earnings thesis falls
+    # through to the regime logic: straddle if cheap, iron condor if rich).
+    if thesis.direction != Direction.NEUTRAL and thesis.is_earnings_play \
+            and thesis.days_to_catalyst is not None \
             and thesis.expected_move and thesis.implied_move:
         if thesis.expected_move > thesis.implied_move:
             return Plan("debit_vertical", call, credit=False,
@@ -76,7 +79,16 @@ def plan_structure(thesis: Thesis, config: Config) -> Plan:
     # Cheap vol => buy premium.
     if regime == VolRegime.CHEAP:
         if thesis.direction == Direction.NEUTRAL:
-            return Plan("iron_condor", rationale="neutral, cheap vol fallback to condor")
+            # Selling premium (condor) in cheap vol is poorly compensated. If we
+            # expect an expansion (a catalyst is present), buy vol via a
+            # straddle; otherwise the best trade is no trade.
+            has_catalyst = (
+                thesis.catalyst != Catalyst.FLOW_ONLY
+                and thesis.days_to_catalyst is not None
+            )
+            if has_catalyst:
+                return Plan("straddle", rationale="cheap vol, neutral + catalyst — long straddle (buy expansion)")
+            return Plan("skip", rationale="cheap vol, neutral, no catalyst — no edge selling premium; pass")
         if thesis.horizon == Horizon.LEAPS:
             return Plan("leaps", call, rationale="cheap vol, LEAPS deep-ITM stock replacement (~0.75Δ)")
         if conviction >= _STRONG and thesis.horizon == Horizon.SWING:
@@ -112,7 +124,7 @@ def select_structure(
     """Choose a structure for the candidate. Uses the live ``chain`` for real
     strikes/premiums when provided; otherwise nominal placeholders."""
     plan = plan_structure(thesis, config)
-    ceiling = float(config.account.get("risk_high_conviction_max", 500))
+    ceiling = config.risk_high_conviction()
 
     if chain is not None:
         from .structure_chain import realize_from_chain
@@ -128,10 +140,15 @@ def realize_placeholder(plan: Plan, price: float, ceiling: float) -> Structure:
     """Build a nominal structure from spot + width heuristics (no live chain)."""
     spread = partial(_defined_risk_spread, price, risk_ceiling=ceiling)
 
+    if plan.kind == "skip":
+        return Structure(structure_type=StructureType.NONE, legs=[], max_loss=None,
+                         max_profit=None, rationale=plan.rationale)
     if plan.kind == "zerodte":
         return spread(call=plan.call, credit=plan.credit,
                       structure_type=StructureType.ZERO_DTE_SPREAD,
                       width_pct=plan.width_pct, rationale=plan.rationale)
+    if plan.kind == "straddle":
+        return _straddle(price, rationale=plan.rationale)
     if plan.kind == "leaps":
         return _leaps(price, call=plan.call)
     if plan.kind == "iron_condor":
@@ -169,6 +186,23 @@ def _long_option(price: float, *, call: bool) -> Structure:
         max_loss=round(max_loss, 2),
         breakevens=[round(be, 2)],
         rationale="cheap vol, strong conviction — long premium",
+        is_defined_risk=True,
+    )
+
+
+def _straddle(price: float, *, rationale: str = "") -> Structure:
+    """Long ATM call + put — a defined-risk long-vol play for cheap-vol neutrals."""
+    strike = _round_strike(price)
+    call_prem = round(price * 0.03, 2)
+    put_prem = round(price * 0.03, 2)
+    debit = (call_prem + put_prem) * 100
+    return Structure(
+        structure_type=StructureType.LONG_STRADDLE,
+        legs=[Leg("buy", "call", strike, _exp("swing")), Leg("buy", "put", strike, _exp("swing"))],
+        max_profit=round(debit * _LONG_TARGET_RR, 2),
+        max_loss=round(debit, 2),
+        breakevens=[round(strike - (call_prem + put_prem), 2), round(strike + (call_prem + put_prem), 2)],
+        rationale=rationale or "cheap vol, neutral + catalyst — long straddle",
         is_defined_risk=True,
     )
 
