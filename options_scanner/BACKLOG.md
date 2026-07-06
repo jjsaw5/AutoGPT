@@ -25,12 +25,15 @@ just delete) as they ship. Priority is a rough guide, not a promise.*
 
 ## 2. Enhancements — ready to build
 
-- [ ] **Scheduled sessions (cadence automation)** *(med; Phase 2).* Cadence is
-  decided — 3×/day (~10:00 / ~12:45 / ~3:15 ET) + event triggers (earnings,
-  FOMC/CPI) + a weekend maintenance pass; see SESSION.md. **Blocked on:** this
-  container is ephemeral, so an in-container cron won't survive — needs Claude
-  Code scheduled-sessions or an external trigger. The *scan* half can run
-  unattended; the *book review* still needs the human-gated Robinhood pull.
+- [x] **Scheduled sessions — scan half** *(shipped, pending enable).* GitHub
+  Actions `scheduled-scan.yml` runs the scan 3×/weekday (DST-correct ET gate) +
+  manual dispatch, persisting to Turso and publishing a digest to the run
+  summary/artifact. Container-independent (runs on GitHub's infra).
+  **To go live:** (a) the scanner must be the repo root — activates on the move
+  to AI-Trade-Agent; (b) set the four Actions secrets (FMP/UW/Turso).
+  *Follow-ups:* (1) active GO alerting to Slack/email (run summary is passive);
+  (2) event-triggered runs (earnings/FOMC) from a catalyst calendar; (3) a
+  Turso→JSONL export so scheduled-run history can backfill the git JSONL.
 - [ ] **Confirmed-GO persistence rule** *(deferred — user said "not yet").* A GO
   counts as act-now only after persisting ≥2 consecutive sessions; a single-
   session GO shows as "provisional." Encodes the intraday-noise lesson. Small

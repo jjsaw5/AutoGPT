@@ -58,6 +58,24 @@ snapshots) while filtering the intraday wiggle.
 - Reviewing the same digest 3× a day fits a human-in-the-loop decision rhythm;
   it is deliberately *not* a continuous firehose.
 
+### Automating the cadence (the scan half)
+
+The **scan** half runs unattended via GitHub Actions —
+`.github/workflows/scheduled-scan.yml` (lives under `options_scanner/` in the
+monorepo; **activates once the scanner is the repo root**, i.e. in
+`AI-Trade-Agent`). It survives the ephemeral dev container because it runs on
+GitHub's infrastructure, and reaches Turso/FMP/UW directly (no proxy).
+
+- **DST-correct 3×/weekday** via an ET gate (fires exactly at the windows above,
+  summer or winter); `workflow_dispatch` runs it on demand.
+- **Scan-only** — persists candidates to Turso and publishes the readout to the
+  Actions run summary + an artifact. The **book review is not automated** (it
+  needs the human-gated Robinhood pull) and stays interactive.
+- **To enable:** set four repo **Actions secrets** — `FMP_API_KEY`,
+  `UW_API_KEY`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`.
+
+Event-triggered and weekend runs stay manual/interactive for now.
+
 ---
 
 ## The one human-gated step (never skip)
