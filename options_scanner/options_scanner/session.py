@@ -91,6 +91,7 @@ def _review_from_scan(pos: PositionInput, evaluated_by_ticker: dict) -> Position
     rather than silently dropping off the book.
     """
     ec = evaluated_by_ticker.get(pos.ticker)
+    days_to_earnings = pos.days_to_earnings
     if ec is not None:
         t = ec.thesis
         thesis_dir = _DIR_TO_INT.get(t.direction, 0)
@@ -98,6 +99,10 @@ def _review_from_scan(pos: PositionInput, evaluated_by_ticker: dict) -> Position
         vol_regime = t.vol_regime.value
         iv_rank = t.iv_rank
         driver = t.direction_driver()
+        # Earnings timing is market data, not a broker fact — take it from the
+        # live thesis unless the caller explicitly supplied it.
+        if days_to_earnings is None:
+            days_to_earnings = t.days_to_earnings
     else:
         thesis_dir, conviction, vol_regime, iv_rank, driver = 0, 0.0, "fair", None, "no data"
 
@@ -107,7 +112,7 @@ def _review_from_scan(pos: PositionInput, evaluated_by_ticker: dict) -> Position
         is_long_premium=pos.is_long_premium,
         pnl_pct=pos.pnl_pct,
         dte=pos.dte,
-        days_to_earnings=pos.days_to_earnings,
+        days_to_earnings=days_to_earnings,
         thesis_dir=thesis_dir,
         thesis_conviction=conviction,
         vol_regime=vol_regime,
