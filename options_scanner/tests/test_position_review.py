@@ -33,6 +33,22 @@ def test_weak_reversal_watches_not_closes():
     assert "tighten" in r.reason
 
 
+def test_weak_grade_with_runway_watches_not_closes():
+    # DKNG case: weak grade (D-), green, 46 DTE, no imminent earnings, no stop hit
+    # => WATCH ("close if it slides"), NOT a hard close on grade alone.
+    r = _r(direction=1, thesis_dir=-1, thesis_conviction=0.4, pnl_pct=0.02,
+           vol_regime="rich", iv_rank=55, dte=46, days_to_earnings=30)
+    assert r.action == "WATCH"
+    assert "slides" in r.reason
+
+
+def test_stop_loss_triggers_close():
+    # Blew past the stop => CLOSE, even if the thesis still aligns.
+    r = _r(direction=1, thesis_dir=1, pnl_pct=-0.45, dte=46)
+    assert r.action == "CLOSE"
+    assert "stop" in r.reason.lower()
+
+
 def test_vol_penalty_ramps_with_iv_rank():
     # no cliff: IVR 47 is a mild penalty, IVR 75 a big one (long premium)
     mild = _r(iv_rank=47, vol_regime="fair")

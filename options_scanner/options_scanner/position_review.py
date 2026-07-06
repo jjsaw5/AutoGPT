@@ -71,6 +71,7 @@ def review_position(
     vol_regime: str,            # 'cheap' | 'fair' | 'rich'
     iv_rank: Optional[float] = None,   # for the ramped vol penalty
     driver: str = "signals",           # what's driving the thesis (for reasons)
+    stop_pnl_pct: float = -0.40,       # hard stop: close when P&L slides past this
 ) -> PositionReview:
     aligned = (direction == 0 and thesis_dir == 0) or (direction != 0 and thesis_dir == direction)
     misaligned = direction != 0 and thesis_dir == -direction
@@ -94,26 +95,31 @@ def review_position(
     grade = _letter(score)
 
     # --- action cascade ------------------------------------------------------
+    # CLOSE requires a real exit TRIGGER (stop hit / conviction reversal /
+    # imminent earnings) — NOT just a weak grade. A low grade means "wouldn't
+    # OPEN this today", which for a defined-risk position with runway is a WATCH,
+    # not a reason to close. "Close if it keeps sliding" = the stop trigger.
     if earnings_imminent:
         action, reason = "CLOSE", f"earnings in {d2e}d — close long premium before the IV crush"
-    elif misaligned and (pnl_pct is None or pnl_pct < 0):
-        # Only hard-close on a *conviction* reversal; a weak flip is a WATCH.
-        if thesis_conviction >= _MIN_CLOSE_CONVICTION:
-            action, reason = "CLOSE", f"{driver} turned against the position (conviction {thesis_conviction:.2f})"
-        else:
-            action, reason = "WATCH", f"{driver} weakly against (conviction {thesis_conviction:.2f}) — tighten stop, not yet a close"
-    elif grade in ("F", "D-"):
-        action, reason = "CLOSE", f"setup broken (grade {grade})"
+    elif pnl_pct is not None and pnl_pct <= stop_pnl_pct:
+        action, reason = "CLOSE", f"hit stop-loss ({pnl_pct:.0%} ≤ {stop_pnl_pct:.0%})"
+    elif misaligned and (pnl_pct is None or pnl_pct < 0) and thesis_conviction >= _MIN_CLOSE_CONVICTION:
+        action, reason = "CLOSE", f"{driver} reversed against the position (conviction {thesis_conviction:.2f})"
     elif pnl_pct is not None and pnl_pct >= 0.40 and aligned:
         action, reason = "TRIM", f"take profit into strength (+{pnl_pct:.0%})"
     elif not is_long_premium and dte is not None and dte <= 3:
         action, reason = "ROLL", "short premium near expiry — roll or close, don't hold short gamma"
     elif aligned and score >= 63:
         action, reason = "HOLD", "thesis intact — hold toward target"
+    elif grade in ("F", "D-", "D"):
+        # Weak, but defined-risk with runway and no trigger → watch, don't close.
+        action, reason = "WATCH", f"weak setup (grade {grade}) — tighten stop; close if it slides to {stop_pnl_pct:.0%}"
+    elif misaligned and thesis_conviction < _MIN_CLOSE_CONVICTION:
+        action, reason = "WATCH", f"{driver} weakly against (conviction {thesis_conviction:.2f}) — tighten stop"
     elif misaligned:
-        action, reason = "WATCH", "flow against but green — use strength to exit"
+        action, reason = "WATCH", "thesis against but green — use strength to exit"
     else:
-        action, reason = "WATCH", "mixed / below-average setup — watch, tighten stop"
+        action, reason = "WATCH", "mixed / below-average — watch, tighten stop"
 
     return PositionReview(
         ticker=ticker, grade=grade, action=action, reason=reason,
