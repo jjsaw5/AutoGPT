@@ -37,6 +37,17 @@ def test_rich_vol_regime(config):
     assert t.vol_regime == VolRegime.RICH
 
 
+def test_agreement_measures_consensus_with_net_direction():
+    from options_scanner.pipeline.thesis import _agreement
+    # DKNG case: one big bearish vote vs two small bullish → net bearish, but
+    # only 1 of 3 votes agrees → low agreement (not the old 2/3 majority).
+    votes = (0.09, -0.75, 0.14)
+    net = -0.14  # weighted net bearish
+    assert _agreement(votes, net) == 1 / 3
+    # unanimous → 1.0
+    assert _agreement((0.5, 0.3, 0.2), 0.33) == 1.0
+
+
 def test_iv_vs_rv_helper():
     from options_scanner.models import Thesis, Direction, Horizon, Catalyst
     t = Thesis(

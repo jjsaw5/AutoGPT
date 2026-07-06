@@ -116,7 +116,7 @@ def build_thesis(candidate: Candidate, config: Config) -> Thesis:
     weighted = [(flow_vote, _FLOW_W), (tech, _TECH_W), (dp, _DP_W)]
     nz = [(v, w) for v, w in weighted if v != 0.0]
     net_vote = sum(v * w for v, w in nz) / sum(w for _, w in nz) if nz else 0.0
-    agreement = _agreement(flow_vote, tech, dp)
+    agreement = _agreement((flow_vote, tech, dp), net_vote)
 
     if net_vote > 0.15:
         direction = Direction.BULLISH
@@ -201,14 +201,20 @@ def build_thesis(candidate: Candidate, config: Config) -> Thesis:
     )
 
 
-def _agreement(*votes: float) -> float:
-    """Fraction agreement among non-zero directional votes (0..1)."""
+def _agreement(votes: tuple[float, ...], net_vote: float) -> float:
+    """Fraction of non-zero votes that agree with the NET direction (0..1).
+
+    Measures true consensus with the call being made — not just the majority
+    side. A big lone vote that outweighs two small opposite ones yields low
+    agreement (the two disagree with the net), so conviction isn't inflated by
+    signals pointing the other way.
+    """
     nz = [v for v in votes if v != 0.0]
-    if len(nz) < 2:
+    if len(nz) < 2 or net_vote == 0.0:
         return 0.0
-    pos = sum(1 for v in nz if v > 0)
-    neg = sum(1 for v in nz if v < 0)
-    return max(pos, neg) / len(nz)
+    want_pos = net_vote > 0
+    agree = sum(1 for v in nz if (v > 0) == want_pos)
+    return agree / len(nz)
 
 
 def _classify_vol_regime(
