@@ -236,10 +236,13 @@ def _vertical(
         # For a debit, prob-of-profit tracks the long leg's delta (prob ITM).
         short_delta = abs(r.long.delta) if r.long.delta is not None else None
 
-    oi = min(r.short.oi, r.long.oi)
-    vol = min(r.short.volume, r.long.volume)
-    spreads = [s for s in (r.short.spread_pct, r.long.spread_pct) if s is not None]
-    spread_pct = max(spreads) if spreads else None
+    # Gate liquidity on the PRIMARY leg — the short leg for a credit (assignment
+    # risk lives there), the long ATM leg for a debit. The other leg is the
+    # protective wing: it only needs to exist, not be deeply liquid.
+    primary = r.short if credit else r.long
+    oi = primary.oi
+    vol = primary.volume
+    spread_pct = primary.spread_pct
 
     return Structure(
         structure_type=structure_type,
@@ -271,10 +274,12 @@ def _condor(chain: OptionChain, ceiling: float, rationale: str) -> Structure | N
     total_credit = put_leg.max_profit + call_leg.max_profit
     max_loss = max(put_leg.max_loss, call_leg.max_loss) - min(put_leg.max_profit, call_leg.max_profit)
     max_loss = round(max(max_loss, 0.0), 2)
-    contracts = [put_leg.short, put_leg.long, call_leg.short, call_leg.long]
-    oi = min(c.oi for c in contracts)
-    vol = min(c.volume for c in contracts)
-    spreads = [c.spread_pct for c in contracts if c.spread_pct is not None]
+    # Gate on the two SHORT legs (near-ATM primaries); the far wings are just
+    # protection and only need to exist.
+    shorts = [put_leg.short, call_leg.short]
+    oi = min(c.oi for c in shorts)
+    vol = min(c.volume for c in shorts)
+    spreads = [c.spread_pct for c in shorts if c.spread_pct is not None]
     put_short_delta = abs(put_leg.short.delta) if put_leg.short.delta is not None else None
     call_short_delta = abs(call_leg.short.delta) if call_leg.short.delta is not None else None
     short_delta = max([d for d in (put_short_delta, call_short_delta) if d is not None], default=None)
