@@ -45,8 +45,11 @@ def render_readout(
         )
 
     # --- Section 1: core book -------------------------------------------------
-    lines.append("\n[1] CORE BOOK  (GO first, then WATCH)")
+    lines.append("\n[1] CORE BOOK  (closest to GO first)")
     core_book = [ec for ec in core if ec.decision in (Decision.GO, Decision.WATCH)]
+    # Order by closeness to an actionable GO, not raw composite: GO names, then
+    # clean WATCH by smallest score gap, then gate/pricing-blocked names last.
+    core_book.sort(key=lambda ec: _go_distance_key(ec, float(config.go_threshold)))
     if not core_book:
         lines.append("  (no GO/WATCH candidates this scan)")
     else:
@@ -93,6 +96,42 @@ def _entry_short(ec: EvaluatedCandidate) -> str:
         return f"${amt:.0f} cr" if amt is not None else "—"
     amt = s.max_loss
     return f"${amt:.0f} db" if amt is not None else "—"
+
+
+def _rh_structure_name(structure) -> str:
+    """Robinhood's name for the structure, derived from the actual legs.
+
+    A debit/credit vertical is a *Call* or *Put* spread depending on the option
+    type of its legs (both legs share a type in a vertical), so the same
+    internal StructureType maps to different Robinhood names.
+    """
+    st = structure.structure_type
+    legs = structure.legs
+    if st == StructureType.IRON_CONDOR:
+        return "Iron Condor"
+    if st == StructureType.LONG_STRADDLE:
+        return "Long Straddle"
+    if legs:
+        cp = legs[0].option_type.capitalize()   # 'Call' / 'Put'
+        if st == StructureType.DEBIT_VERTICAL:
+            return f"{cp} Debit Spread"
+        if st == StructureType.CREDIT_VERTICAL:
+            return f"{cp} Credit Spread"
+        if len(legs) == 1:
+            return f"{'Long' if legs[0].action == 'buy' else 'Short'} {cp}"
+    return st.value.replace("_", " ").title()
+
+
+def _go_distance_key(ec: EvaluatedCandidate, go: float) -> tuple:
+    """Sort key: closest-to-actionable first. GO names lead; then clean WATCH by
+    ascending score gap; then names blocked by a gate / bad pricing (a hard wall
+    that score alone can't clear) at the bottom, also by gap."""
+    if ec.decision == Decision.GO:
+        return (0, 0.0)
+    blocked = (ec.structure.max_loss is not None and ec.structure.max_loss <= 0) \
+        or bool(ec.gates.failures)
+    gap = max(0.0, go - ec.effective_composite)
+    return (2 if blocked else 1, gap)
 
 
 # Pillar → short label for the "what moves it" lever (weakest pillar = the drag).
@@ -147,7 +186,7 @@ def _render_candidate_table(core_book: list[EvaluatedCandidate], config: Config)
     position-review table. Shows the contract we'd trade (strikes/expiry/cost)
     and the distance to a full GO. Detail rows follow below it."""
     go = float(config.go_threshold)
-    header = (f"  {'#':<2} {'TICKER':<6} {'STRUCTURE':<15} {'DEC':<5} {'COMP':>5} "
+    header = (f"  {'#':<2} {'TICKER':<6} {'STRUCTURE':<18} {'DEC':<5} {'COMP':>5} "
               f"{'POP':>4} {'EV':>7} {'CONTRACT':<24} {'EXPIRY':<11} {'COST':>9}  Δ→GO / BLOCKER")
     rows = [header, "  " + "-" * (len(header) - 2)]
     for rank, ec in enumerate(core_book, 1):
@@ -155,7 +194,7 @@ def _render_candidate_table(core_book: list[EvaluatedCandidate], config: Config)
         pop = f"{s.pop:.0%}" if s.pop is not None else "—"
         ev = f"${s.expected_value:.0f}" if s.expected_value is not None else "—"
         rows.append(
-            f"  {rank:<2} {ec.ticker:<6} {ec.structure.structure_type.value:<15} "
+            f"  {rank:<2} {ec.ticker:<6} {_rh_structure_name(ec.structure):<18} "
             f"{ec.decision.value:<5} {ec.effective_composite:>5.1f} {pop:>4} {ev:>7} "
             f"{_contract_str(ec):<24} {_expiry_str(ec):<11} {_entry_short(ec):>9}  "
             f"{_distance_to_go(ec, go)}"
@@ -184,7 +223,7 @@ def _render_row(
         comp += f"{ec.regime_adj:+.0f} macro → {ec.effective_composite:.1f}"
     header = (
         f"  #{rank} {ec.ticker} [{cap}/T{ec.candidate.tier.value}] "
-        f"{ec.structure.structure_type.value}  →  {ec.decision.value}  ({comp})"
+        f"{_rh_structure_name(ec.structure)}  →  {ec.decision.value}  ({comp})"
     )
     return [
         header,
