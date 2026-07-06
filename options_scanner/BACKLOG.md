@@ -25,6 +25,19 @@ just delete) as they ship. Priority is a rough guide, not a promise.*
 
 ## 2. Enhancements — ready to build
 
+- [ ] **Durable history → Turso (Phase 2)** *(high value; in progress).* Phase 1
+  shipped: append-only JSONL under `history/` (committed to git — the source of
+  truth) + a rebuildable local SQLite query DB, backfilled with the runs to date.
+  **Phase 2** wires the hosted **Turso** (libSQL/SQLite over HTTPS — the only DB
+  route that clears this env's HTTPS-only egress proxy) behind the same
+  `QueryDB` interface. *Needs: a Turso DB provisioned + `TURSO_DATABASE_URL` /
+  `TURSO_AUTH_TOKEN` in `.env` (never committed).* Then: write-through + a
+  resync-on-reconnect so an ephemeral-container blip never drops a scan.
+- [ ] **Graduate-to-Postgres trigger** *(someday).* If volume/concurrency
+  outgrows SQLite/Turso, the monthly-JSONL layout `COPY`s straight into Postgres
+  with no reshaping. Not needed at current volume — revisit if we add live
+  dashboards or many writers.
+
 - [ ] **Vol-surface data → P1** *(high value; adds priors).* IV **percentile**
   (vs IV rank), **IV/HV** ratio, **skew** (put vs call), **term-structure slope**.
   Improves the highest-weighted pillar. Needs UW endpoint verification.

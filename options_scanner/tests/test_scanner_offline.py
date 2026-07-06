@@ -105,5 +105,26 @@ def test_logging_writes_jsonl(config, tmp_path):
     assert "composite" in row and "gate_flags" in row
 
 
+def test_scan_writes_durable_history(config, tmp_path):
+    # A scan with history_dir set persists JSONL + a rebuildable query DB.
+    from options_scanner.scanner import Scanner
+    from options_scanner.history import HistoryStore, SqliteQueryDB
+
+    scanner = Scanner(config)  # offline: no fmp/uw clients
+    hist = tmp_path / "history"
+    res = scanner.scan(tickers=["AAPL", "NVDA"], history_dir=str(hist))
+    assert res.history_rows == 2
+    assert (hist / "scans").glob("*.jsonl")
+
+    # Reopen from the committed JSONL alone and rebuild the query DB.
+    store = HistoryStore(base_dir=hist, query_db=SqliteQueryDB())
+    assert store.rebuild() == 2
+    manifest = store.query_db.runs()[0]
+    assert manifest["n_candidates"] == 2
+    # offline => structures are placeholders => coverage is 0.
+    assert manifest["chain_coverage"] == 0.0
+    store.query_db.close()
+
+
 def _decision_rank(decision: Decision) -> int:
     return {Decision.GO: 0, Decision.WATCH: 1, Decision.PASS: 2}[decision]

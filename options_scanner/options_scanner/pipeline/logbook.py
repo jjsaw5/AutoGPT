@@ -19,6 +19,7 @@ LOG_FIELDS = [
     "thesis_tag", "direction", "vol_regime", "catalyst_type", "days_to_catalyst",
     "iv_rank", "implied_move", "expected_move",
     "P1", "P2", "P3", "P4", "P5", "P6", "composite",
+    "effective_composite", "regime_adj", "from_chain",
     "POP_predicted", "max_profit", "max_loss", "decision", "gate_flags",
 ]
 
@@ -47,6 +48,12 @@ def candidate_to_row(
         "P1": s.p1, "P2": s.p2, "P3": s.p3,
         "P4": s.p4, "P5": s.p5, "P6": s.p6,
         "composite": s.composite,
+        # Decision basis: composite after the regime nudge, the nudge itself, and
+        # whether the structure was priced off a *real* chain (vs a placeholder).
+        # from_chain is the field that makes a phantom (rate-limited) GO auditable.
+        "effective_composite": ec.effective_composite,
+        "regime_adj": ec.regime_adj,
+        "from_chain": ec.structure.from_chain,
         "POP_predicted": s.pop,
         "max_profit": ec.structure.max_profit,
         "max_loss": ec.structure.max_loss,

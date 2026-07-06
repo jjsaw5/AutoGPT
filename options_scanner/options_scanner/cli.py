@@ -35,6 +35,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Record GO / budget-blocked setups as shadow trades in this ledger (JSON).",
     )
     scan.add_argument(
+        "--history", default=None,
+        help="Durable run history dir (append-only JSONL + rebuildable SQLite). "
+             "Commit this dir to keep a queryable cross-run time series.",
+    )
+    scan.add_argument(
         "--offline", action="store_true",
         help="Do not call live APIs (uses whatever signals are pre-populated).",
     )
@@ -77,12 +82,15 @@ def main(argv: list[str] | None = None) -> int:
         result = scanner.scan(
             tickers=tickers, context=context,
             log_path=args.log, journal_path=args.journal,
+            history_dir=args.history,
         )
         print(result.readout)
         if args.log:
             print(f"\n[logged {result.rows_logged} candidate rows to {args.log}]")
         if args.journal:
             print(f"[recorded {result.shadows_recorded} new shadow trades in {args.journal}]")
+        if args.history:
+            print(f"[recorded {result.history_rows} rows to durable history at {args.history}]")
         return 0
 
     if args.command == "journal":

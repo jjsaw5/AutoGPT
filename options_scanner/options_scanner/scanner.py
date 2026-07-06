@@ -30,8 +30,10 @@ from .pipeline import (
     select_structure,
 )
 from .pipeline.chain import build_chain
+from .pipeline.logbook import candidate_to_row
 from .market_context import build_market_regime
 from .exits import build_exit_plan
+from .history import HistoryStore, SqliteQueryDB, build_run_manifest
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,7 @@ class ScanResult:
     readout: str = ""
     rows_logged: int = 0
     shadows_recorded: int = 0
+    history_rows: int = 0
     regime: Any = None
 
 
@@ -100,6 +103,7 @@ class Scanner:
         context: dict[str, Any] | None = None,
         log_path: str | None = None,
         journal_path: str | None = None,
+        history_dir: str | None = None,
         now: datetime | None = None,
     ) -> ScanResult:
         now = now or datetime.now(timezone.utc)
@@ -166,10 +170,30 @@ class Scanner:
             )
             ledger.save()
 
+        # Durable time-series history: append-only JSONL (committed to git) plus a
+        # rebuildable SQLite mirror for queries. This is what lets us later ask
+        # "how did SPY drift across runs, and was that GO on a real chain?".
+        history_rows = 0
+        if history_dir:
+            rows = [
+                candidate_to_row(ec, scan_id=scan_id, timestamp=timestamp)
+                for ec in evaluated
+            ]
+            manifest = build_run_manifest(
+                rows, scan_id=scan_id, timestamp=timestamp, regime=regime
+            )
+            store = HistoryStore(
+                base_dir=history_dir,
+                query_db=SqliteQueryDB(f"{history_dir}/scanner.sqlite"),
+            )
+            history_rows = store.record(rows, manifest=manifest)
+            store.query_db.close()
+
         return ScanResult(
             scan_id=scan_id, timestamp=timestamp,
             evaluated=evaluated, readout=readout, rows_logged=rows_logged,
-            shadows_recorded=shadows_recorded, regime=regime,
+            shadows_recorded=shadows_recorded, history_rows=history_rows,
+            regime=regime,
         )
 
     def _universe(self, tickers: list[str] | None):

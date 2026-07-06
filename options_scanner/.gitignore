@@ -1,8 +1,16 @@
 .env
-runs/
+/runs/
 *.jsonl
 __pycache__/
 *.pyc
 .pytest_cache/
 *.egg-info/
 .venv/
+
+# Durable run history is the exception to the *.jsonl ignore: the append-only
+# JSONL under history/ IS the committed source of truth. The materialized query
+# DB is rebuildable from it, so it stays out of git.
+!history/
+!history/**/*.jsonl
+history/**/*.sqlite
+history/**/*.db
