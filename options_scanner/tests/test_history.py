@@ -197,3 +197,45 @@ def test_history_sync_to_pushes_to_backend(tmp_path):
     n = store.sync_to(remote)
     assert n == 1
     assert remote.ticker_timeline("SPY")[0]["decision"] == "GO"
+
+
+def _review(ticker, scan_id, ts, **kw):
+    base = dict(scan_id=scan_id, timestamp=ts, ticker=ticker, account="Individual",
+                grade="D-", action="WATCH", reason="tighten stop", score=42.0,
+                aligned=False, direction=1, is_long_premium=True, pnl_pct=0.02,
+                dte=46, days_to_earnings=30)
+    base.update(kw)
+    return base
+
+
+def test_reviews_persist_and_query(tmp_path):
+    store = _store(tmp_path)
+    ts1, ts2 = "2026-07-06T13:00:00Z", "2026-07-07T13:00:00Z"
+    cand = [_row("DKNG", "s1", ts1)]
+    # Two sessions: DKNG grade drifts D- (WATCH) -> C- (still WATCH), tracked.
+    store.record(cand, manifest=build_run_manifest(cand, scan_id="s1", timestamp=ts1),
+                 review_rows=[_review("DKNG", "s1", ts1, grade="D-", pnl_pct=0.02)])
+    store.record(cand, manifest=build_run_manifest(cand, scan_id="s2", timestamp=ts2),
+                 review_rows=[_review("DKNG", "s2", ts2, grade="C-", pnl_pct=-0.05, action="WATCH")])
+
+    hist = store.query_db.position_history("DKNG")
+    assert [h["grade"] for h in hist] == ["D-", "C-"]      # ordered over time
+    assert hist[0]["account"] == "Individual"
+
+    # Reviews JSONL is its own durable stream.
+    review_file = tmp_path / "history" / "reviews" / "2026-07.jsonl"
+    assert review_file.exists()
+
+
+def test_reviews_sync_to_turso(tmp_path):
+    store = _store(tmp_path)
+    ts = "2026-07-06T13:00:00Z"
+    cand = [_row("DKNG", "s1", ts)]
+    store.record(cand, manifest=build_run_manifest(cand, scan_id="s1", timestamp=ts),
+                 review_rows=[_review("DKNG", "s1", ts)])
+
+    remote = TursoQueryDB(_FakeTurso())
+    store.sync_to(remote)          # candidates AND reviews replay to the backend
+    hist = remote.position_history("DKNG")
+    assert len(hist) == 1 and hist[0]["action"] == "WATCH"
+    assert hist[0]["grade"] == "D-"

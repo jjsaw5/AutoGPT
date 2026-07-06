@@ -58,6 +58,24 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     jrnl.add_argument("--note", default=None, help="annotate: the note text.")
     jrnl.add_argument("-v", "--verbose", action="store_true")
 
+    # session — the full checklist in one operation
+    sess = sub.add_parser(
+        "session", help="Run the full session: scan + position review + history."
+    )
+    sess.add_argument("--config", default=None)
+    sess.add_argument(
+        "--positions", default=None,
+        help="JSON file of live option positions (from the Robinhood pull). "
+             "Omit to run scan-only (review stage is skipped with a note).",
+    )
+    sess.add_argument("--history", default=None, help="Durable history dir.")
+    sess.add_argument("--journal", default=None, help="Shadow-trade ledger (JSON).")
+    sess.add_argument("--offline", action="store_true")
+    sess.add_argument("--open-risk", type=float, default=0.0)
+    sess.add_argument("--open-positions", type=int, default=0)
+    sess.add_argument("--zerodte-used", type=int, default=0)
+    sess.add_argument("-v", "--verbose", action="store_true")
+
     # history subcommands
     hist = sub.add_parser("history", help="Sync / inspect durable run history.")
     hist.add_argument("action", choices=["sync", "timeline"])
@@ -101,6 +119,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[recorded {result.history_rows} rows to durable history at {args.history}]")
         return 0
 
+    if args.command == "session":
+        return _session_command(args)
+
     if args.command == "journal":
         return _journal_command(args)
 
@@ -108,6 +129,34 @@ def main(argv: list[str] | None = None) -> int:
         return _history_command(args)
 
     return 1
+
+
+def _session_command(args) -> int:
+    from .session import SessionRunner, load_positions
+
+    config = load_config(args.config)
+    scanner = Scanner.from_config(config, offline=args.offline)
+    context = {
+        "open_risk": args.open_risk,
+        "open_positions": args.open_positions,
+        "zerodte_used": args.zerodte_used,
+    }
+    positions = load_positions(args.positions) if args.positions else []
+    if not positions:
+        print("[session] no --positions supplied — running scan-only; "
+              "the live-book review needs a Robinhood pull.\n")
+
+    result = SessionRunner(scanner).run(
+        positions, context=context,
+        history_dir=args.history, journal_path=args.journal,
+    )
+    print(result.readout)
+    if args.journal:
+        print(f"[recorded {result.scan.shadows_recorded} new shadow trades in {args.journal}]")
+    if args.history:
+        print(f"[recorded {result.history_rows} candidate rows + "
+              f"{len(result.reviews)} position reviews to durable history at {args.history}]")
+    return 0
 
 
 def _history_command(args) -> int:

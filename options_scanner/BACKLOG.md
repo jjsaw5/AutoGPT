@@ -94,8 +94,12 @@ outcomes. Accumulating shadow trades unblocks them.*
   calendar, insider, short interest as scored catalyst inputs.
 - [ ] **Separate speculative/meme model** — keep social-hype names out of the
   main model; score them in their own bucket.
-- [ ] **Position-management as a first-class report/CLI** — run the grade+action
-  review on the whole book on a schedule.
+- [x] **Position-management as a first-class report/CLI** *(shipped).* The
+  `session` command + SESSION.md runbook run scan + live-book review + journal +
+  durable history in one operation; reviews persist to `position_reviews`
+  (JSONL + SQLite + Turso), tracked over time like candidate scores. *Follow-up:*
+  scheduled/autonomous sessions (blocked on the human-gated Robinhood pull for
+  the review stage — scan-only can run unattended).
 
 ---
 

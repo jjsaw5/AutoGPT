@@ -100,6 +100,7 @@ class Scanner:
         self,
         *,
         tickers: list[str] | None = None,
+        extra_tickers: list[str] | None = None,
         context: dict[str, Any] | None = None,
         log_path: str | None = None,
         journal_path: str | None = None,
@@ -121,7 +122,7 @@ class Scanner:
         if self.config.market_context.get("enabled", True) and self.fmp is not None:
             regime = build_market_regime(self.fmp, now=now)
 
-        candidates = self._universe(tickers)
+        candidates = self._universe(tickers, extra_tickers)
         logger.info("Universe: %d candidates", len(candidates))
 
         evaluated: list[EvaluatedCandidate] = []
@@ -170,41 +171,12 @@ class Scanner:
             )
             ledger.save()
 
-        # Durable time-series history: append-only JSONL (committed to git) plus a
-        # rebuildable SQLite mirror for queries. This is what lets us later ask
-        # "how did SPY drift across runs, and was that GO on a real chain?".
         history_rows = 0
         if history_dir:
-            rows = [
-                candidate_to_row(ec, scan_id=scan_id, timestamp=timestamp)
-                for ec in evaluated
-            ]
-            manifest = build_run_manifest(
-                rows, scan_id=scan_id, timestamp=timestamp, regime=regime
+            history_rows = self._persist_history(
+                evaluated, scan_id=scan_id, timestamp=timestamp,
+                regime=regime, history_dir=history_dir,
             )
-            store = HistoryStore(
-                base_dir=history_dir,
-                query_db=SqliteQueryDB(f"{history_dir}/scanner.sqlite"),
-            )
-            history_rows = store.record(rows, manifest=manifest)
-            store.query_db.close()
-
-            # Write-through to the hosted DB when configured. JSONL is already
-            # persisted, so a Turso/network hiccup only costs this scan's remote
-            # copy — never the scan itself; the next `history sync` catches up.
-            creds = self.config.credentials
-            if creds.has_turso:
-                try:
-                    from .history import TursoQueryDB
-                    remote = TursoQueryDB.from_env(
-                        creds.turso_database_url, creds.turso_auth_token
-                    )
-                    remote.apply_run(manifest)
-                    remote.apply_candidates(rows)
-                except Exception as exc:  # never abort a scan on remote-DB issues
-                    logger.warning(
-                        "Turso write-through failed (JSONL retains the scan): %s", exc
-                    )
 
         return ScanResult(
             scan_id=scan_id, timestamp=timestamp,
@@ -213,11 +185,66 @@ class Scanner:
             regime=regime,
         )
 
-    def _universe(self, tickers: list[str] | None):
+    def _persist_history(
+        self, evaluated, *, scan_id, timestamp, regime, history_dir,
+        review_rows=None,
+    ) -> int:
+        """Single writer for durable history: append-only JSONL (committed to
+        git) + a rebuildable local SQLite mirror, then write through to Turso
+        when configured. ``review_rows`` (optional) carries a session's
+        position reviews so a holding's grade is tracked alongside candidates.
+
+        JSONL is written first, so a Turso/network hiccup only costs the remote
+        copy of this run — never the run itself; the next `history sync` catches
+        up. Used by both plain scans (review_rows=None) and full sessions.
+        """
+        rows = [
+            candidate_to_row(ec, scan_id=scan_id, timestamp=timestamp)
+            for ec in evaluated
+        ]
+        manifest = build_run_manifest(
+            rows, scan_id=scan_id, timestamp=timestamp, regime=regime
+        )
+        store = HistoryStore(
+            base_dir=history_dir,
+            query_db=SqliteQueryDB(f"{history_dir}/scanner.sqlite"),
+        )
+        n = store.record(rows, manifest=manifest, review_rows=review_rows)
+        store.query_db.close()
+
+        creds = self.config.credentials
+        if creds.has_turso:
+            try:
+                from .history import TursoQueryDB
+                remote = TursoQueryDB.from_env(
+                    creds.turso_database_url, creds.turso_auth_token
+                )
+                remote.apply_run(manifest)
+                remote.apply_candidates(rows)
+                if review_rows:
+                    remote.apply_reviews(review_rows)
+            except Exception as exc:  # never abort on remote-DB issues
+                logger.warning(
+                    "Turso write-through failed (JSONL retains the run): %s", exc
+                )
+        return n
+
+    def _universe(self, tickers=None, extra_tickers=None):
+        from .models import Candidate, Tier
         if tickers:
-            from .models import Candidate, Tier
-            return [
+            base = [
                 Candidate(ticker=t.upper(), tier=Tier.A, source_feeds=["manual"])
                 for t in tickers
             ]
-        return build_universe(self.config, self.uw)
+        else:
+            base = build_universe(self.config, self.uw)
+        # Union in extra tickers (e.g. held positions) not already present, so a
+        # session always has a live thesis for every name it must review.
+        if extra_tickers:
+            have = {c.ticker for c in base}
+            for t in extra_tickers:
+                tk = t.upper()
+                if tk not in have:
+                    base.append(Candidate(ticker=tk, tier=Tier.A, source_feeds=["held"]))
+                    have.add(tk)
+        return base

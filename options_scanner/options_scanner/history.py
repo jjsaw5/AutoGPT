@@ -143,7 +143,11 @@ class QueryDB(ABC):
     @abstractmethod
     def apply_candidates(self, rows: Iterable[dict[str, Any]]) -> None: ...
     @abstractmethod
+    def apply_reviews(self, rows: Iterable[dict[str, Any]]) -> None: ...
+    @abstractmethod
     def ticker_timeline(self, ticker: str) -> list[dict[str, Any]]: ...
+    @abstractmethod
+    def position_history(self, ticker: str) -> list[dict[str, Any]]: ...
     @abstractmethod
     def runs(self, limit: int = 100) -> list[dict[str, Any]]: ...
     @abstractmethod
@@ -194,7 +198,45 @@ CREATE TABLE IF NOT EXISTS scan_candidates (
 );
 CREATE INDEX IF NOT EXISTS ix_cand_ticker   ON scan_candidates(ticker, timestamp);
 CREATE INDEX IF NOT EXISTS ix_cand_decision ON scan_candidates(decision);
+CREATE TABLE IF NOT EXISTS position_reviews (
+    scan_id           TEXT NOT NULL,
+    timestamp         TEXT NOT NULL,
+    ticker            TEXT NOT NULL,
+    account           TEXT NOT NULL DEFAULT '',
+    grade             TEXT,
+    action            TEXT,
+    reason            TEXT,
+    score             REAL,
+    aligned           INTEGER,
+    direction         INTEGER,
+    is_long_premium   INTEGER,
+    pnl_pct           REAL,
+    dte               INTEGER,
+    days_to_earnings  INTEGER,
+    PRIMARY KEY (scan_id, ticker, account)
+);
+CREATE INDEX IF NOT EXISTS ix_review_ticker ON position_reviews(ticker, timestamp);
 """
+
+# Columns persisted for a position review (mirrors the JSONL keys).
+_REVIEW_COLUMNS = [
+    "scan_id", "timestamp", "ticker", "account", "grade", "action", "reason",
+    "score", "aligned", "direction", "is_long_premium", "pnl_pct", "dte",
+    "days_to_earnings",
+]
+
+
+def normalize_review_row(row: dict[str, Any]) -> dict[str, Any]:
+    """A review JSONL row -> a dict keyed by review columns; bools -> 0/1."""
+    out: dict[str, Any] = {c: None for c in _REVIEW_COLUMNS}
+    out["account"] = ""
+    for k, v in row.items():
+        if k in out:
+            out[k] = v
+    for b in ("aligned", "is_long_premium"):
+        if out.get(b) is not None:
+            out[b] = 1 if out[b] else 0
+    return out
 
 
 class SqliteQueryDB(QueryDB):
@@ -229,11 +271,31 @@ class SqliteQueryDB(QueryDB):
         )
         self._conn.commit()
 
+    def apply_reviews(self, rows: Iterable[dict[str, Any]]) -> None:
+        norm = [normalize_review_row(r) for r in rows]
+        if not norm:
+            return
+        cols = ", ".join(_REVIEW_COLUMNS)
+        placeholders = ", ".join(f":{c}" for c in _REVIEW_COLUMNS)
+        self._conn.executemany(
+            f"INSERT OR REPLACE INTO position_reviews ({cols}) VALUES ({placeholders})",
+            norm,
+        )
+        self._conn.commit()
+
     def ticker_timeline(self, ticker: str) -> list[dict[str, Any]]:
         cur = self._conn.execute(
             "SELECT timestamp, composite, effective_composite, regime_adj, "
             "decision, from_chain, structure, vol_regime, iv_rank "
             "FROM scan_candidates WHERE ticker = ? ORDER BY timestamp",
+            (ticker.upper(),),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+    def position_history(self, ticker: str) -> list[dict[str, Any]]:
+        cur = self._conn.execute(
+            "SELECT timestamp, account, grade, action, score, pnl_pct, dte, reason "
+            "FROM position_reviews WHERE ticker = ? ORDER BY timestamp",
             (ticker.upper(),),
         )
         return [dict(r) for r in cur.fetchall()]
@@ -370,11 +432,28 @@ class TursoQueryDB(QueryDB):
         sql = f"INSERT OR REPLACE INTO scan_candidates ({cols}) VALUES ({placeholders})"
         self._execute_batch([(sql, tuple(r[c] for c in _CANDIDATE_COLUMNS)) for r in norm])
 
+    def apply_reviews(self, rows: Iterable[dict[str, Any]]) -> None:
+        norm = [normalize_review_row(r) for r in rows]
+        if not norm:
+            return
+        cols = ", ".join(_REVIEW_COLUMNS)
+        placeholders = ", ".join("?" for _ in _REVIEW_COLUMNS)
+        sql = f"INSERT OR REPLACE INTO position_reviews ({cols}) VALUES ({placeholders})"
+        self._execute_batch([(sql, tuple(r[c] for c in _REVIEW_COLUMNS)) for r in norm])
+
     def ticker_timeline(self, ticker: str) -> list[dict[str, Any]]:
         res = self._execute_batch([(
             "SELECT timestamp, composite, effective_composite, regime_adj, "
             "decision, from_chain, structure, vol_regime, iv_rank "
             "FROM scan_candidates WHERE ticker = ? ORDER BY timestamp",
+            (ticker.upper(),),
+        )])
+        return self._rows_to_dicts(res[0]) if res else []
+
+    def position_history(self, ticker: str) -> list[dict[str, Any]]:
+        res = self._execute_batch([(
+            "SELECT timestamp, account, grade, action, score, pnl_pct, dte, reason "
+            "FROM position_reviews WHERE ticker = ? ORDER BY timestamp",
             (ticker.upper(),),
         )])
         return self._rows_to_dicts(res[0]) if res else []
@@ -399,28 +478,39 @@ class HistoryStore:
     query_db: Optional[QueryDB] = None
     _scans_dir: Path = field(init=False)
     _runs_dir: Path = field(init=False)
+    _reviews_dir: Path = field(init=False)
 
     def __post_init__(self) -> None:
         self.base_dir = Path(self.base_dir)
         self._scans_dir = self.base_dir / "scans"
         self._runs_dir = self.base_dir / "runs"
+        self._reviews_dir = self.base_dir / "reviews"
 
     # -- write path (called once per scan) --
     def record(
-        self, candidate_rows: list[dict[str, Any]], *, manifest: RunManifest
+        self, candidate_rows: list[dict[str, Any]], *, manifest: RunManifest,
+        review_rows: Optional[list[dict[str, Any]]] = None,
     ) -> int:
         """Append a scan to the durable JSONL and mirror into the query DB.
 
+        ``review_rows`` (optional) are the position-review rows for the same
+        session — persisted alongside candidates so a holding's grade/action can
+        be tracked across sessions, the same way candidate scores are.
+
         Returns the number of candidate rows written. Idempotent per scan_id:
-        the query DB upserts on (scan_id, ticker) / scan_id, and JSONL is an
+        the query DB upserts on (scan_id, ticker[, account]), and JSONL is an
         append log de-duplicated on rebuild.
         """
         month = _month_of(manifest.timestamp)
         self._append(self._scans_dir / f"{month}.jsonl", candidate_rows)
         self._append(self._runs_dir / f"{month}.jsonl", [manifest.to_row()])
+        if review_rows:
+            self._append(self._reviews_dir / f"{month}.jsonl", review_rows)
         if self.query_db is not None:
             self.query_db.apply_run(manifest)
             self.query_db.apply_candidates(candidate_rows)
+            if review_rows:
+                self.query_db.apply_reviews(review_rows)
         return len(candidate_rows)
 
     @staticmethod
@@ -438,6 +528,11 @@ class HistoryStore:
 
     def iter_run_rows(self) -> Iterator[dict[str, Any]]:
         for path in sorted(self._runs_dir.glob("*.jsonl")):
+            for line in _read_jsonl(path):
+                yield line
+
+    def iter_review_rows(self) -> Iterator[dict[str, Any]]:
+        for path in sorted(self._reviews_dir.glob("*.jsonl")):
             for line in _read_jsonl(path):
                 yield line
 
@@ -460,6 +555,7 @@ class HistoryStore:
             target.apply_run(_row_to_manifest(row))
         rows = list(self.iter_candidate_rows())
         target.apply_candidates(rows)
+        target.apply_reviews(list(self.iter_review_rows()))
         return len(rows)
 
 
