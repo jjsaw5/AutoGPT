@@ -50,6 +50,7 @@ class PositionInput:
     dte: Optional[int] = None
     days_to_earnings: Optional[int] = None
     account: str = ""           # which book (e.g. "Individual" / "Agentic")
+    structure: str = ""         # Robinhood name of the held structure (from legs)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "PositionInput":
@@ -61,6 +62,7 @@ class PositionInput:
             dte=d.get("dte"),
             days_to_earnings=d.get("days_to_earnings"),
             account=str(d.get("account", "")),
+            structure=str(d.get("structure", "")),
         )
 
 
@@ -124,7 +126,8 @@ def _review_from_scan(pos: PositionInput, evaluated_by_ticker: dict) -> Position
 def _review_row(r: PositionReview, pos: PositionInput, *, scan_id: str, timestamp: str) -> dict:
     return {
         "scan_id": scan_id, "timestamp": timestamp, "ticker": r.ticker,
-        "account": pos.account, "grade": r.grade, "action": r.action,
+        "account": pos.account, "structure": pos.structure,
+        "grade": r.grade, "action": r.action,
         "reason": r.reason, "score": r.score, "aligned": r.aligned,
         "direction": pos.direction, "is_long_premium": pos.is_long_premium,
         "pnl_pct": pos.pnl_pct, "dte": pos.dte,
@@ -135,18 +138,20 @@ def _review_row(r: PositionReview, pos: PositionInput, *, scan_id: str, timestam
 def _render_reviews(rows: list[tuple[PositionReview, PositionInput]]) -> str:
     if not rows:
         return "[4] POSITION REVIEW\n  (no open positions supplied)\n"
-    lines = ["[4] POSITION REVIEW  (grade + action; recommend-only)"]
+    header = (f"  {'TICKER':<6} {'ACCT':<11} {'STRUCTURE':<18} {'GRADE':<5} "
+              f"{'ACTION':<6} {'P&L':>5} {'DTE':>5}  WHY")
+    lines = ["[4] POSITION REVIEW  (grade + action; recommend-only)",
+             header, "  " + "-" * (len(header) - 2)]
     # CLOSE first, then TRIM/ROLL, then HOLD/WATCH — most-urgent on top.
     order = {"CLOSE": 0, "ROLL": 1, "TRIM": 2, "HOLD": 3, "WATCH": 4}
     for r, pos in sorted(rows, key=lambda x: order.get(x[0].action, 9)):
-        acct = f" [{pos.account}]" if pos.account else ""
         pnl = f"{pos.pnl_pct:+.0%}" if pos.pnl_pct is not None else "n/a"
         dte = f"{pos.dte}d" if pos.dte is not None else "n/a"
+        struct = pos.structure or "—"
         lines.append(
-            f"  {r.ticker}{acct}  {r.grade:>2} → {r.action:<5}  "
-            f"(P&L {pnl} · {dte} · score {r.score})"
+            f"  {r.ticker:<6} {pos.account:<11} {struct:<18} {r.grade:<5} "
+            f"{r.action:<6} {pnl:>5} {dte:>5}  {r.reason}"
         )
-        lines.append(f"     {r.reason}")
     return "\n".join(lines) + "\n"
 
 

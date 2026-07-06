@@ -203,6 +203,7 @@ CREATE TABLE IF NOT EXISTS position_reviews (
     timestamp         TEXT NOT NULL,
     ticker            TEXT NOT NULL,
     account           TEXT NOT NULL DEFAULT '',
+    structure         TEXT,
     grade             TEXT,
     action            TEXT,
     reason            TEXT,
@@ -220,9 +221,15 @@ CREATE INDEX IF NOT EXISTS ix_review_ticker ON position_reviews(ticker, timestam
 
 # Columns persisted for a position review (mirrors the JSONL keys).
 _REVIEW_COLUMNS = [
-    "scan_id", "timestamp", "ticker", "account", "grade", "action", "reason",
-    "score", "aligned", "direction", "is_long_premium", "pnl_pct", "dte",
-    "days_to_earnings",
+    "scan_id", "timestamp", "ticker", "account", "structure", "grade", "action",
+    "reason", "score", "aligned", "direction", "is_long_premium", "pnl_pct",
+    "dte", "days_to_earnings",
+]
+
+# Idempotent column adds for tables that predate a column (the hosted DB is
+# persistent, so CREATE IF NOT EXISTS won't backfill it). Run best-effort.
+_MIGRATIONS = [
+    ("position_reviews", "structure", "ALTER TABLE position_reviews ADD COLUMN structure TEXT"),
 ]
 
 
@@ -249,6 +256,12 @@ class SqliteQueryDB(QueryDB):
         self._conn = sqlite3.connect(self.path)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
+        # Best-effort column adds for pre-existing tables.
+        for table, col, ddl in _MIGRATIONS:
+            have = {r[1] for r in self._conn.execute(f"PRAGMA table_info({table})")}
+            if col not in have:
+                self._conn.execute(ddl)
+        self._conn.commit()
 
     def apply_run(self, manifest: RunManifest) -> None:
         row = manifest.to_row()
@@ -381,6 +394,13 @@ class TursoQueryDB(QueryDB):
             self._execute_batch(
                 [(stmt, ()) for stmt in _SCHEMA.split(";") if stmt.strip()]
             )
+            # Best-effort column adds for a pre-existing hosted table; ignore the
+            # "duplicate column" error when it's already there.
+            for _table, _col, ddl in _MIGRATIONS:
+                try:
+                    self._execute_batch([(ddl, ())])
+                except Exception:
+                    pass
 
     @classmethod
     def from_env(cls, url: str, auth_token: str, **kw) -> "TursoQueryDB":
