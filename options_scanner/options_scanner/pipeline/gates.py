@@ -100,21 +100,35 @@ def _proxy_liquidity(candidate: Candidate) -> tuple[float | None, float | None]:
 
 def _g1_contract_liquidity(candidate, structure, g, ctx) -> GateResult:
     scale = _TIER_SCALE.get(candidate.cap_tier or CapTier.LARGE, 1.0)
-    oi_min = float(g.get("oi_min", 500)) * scale
-    vol_min = float(g.get("contract_vol_min", 100)) * scale
+    oi_min = float(g.get("oi_min", 250)) * scale
+    vol_min = float(g.get("contract_vol_min", 50)) * scale
+    liquid_spread = float(g.get("liquid_spread_pct", 0.05))
 
     # Prefer the structure's real per-leg metrics from the live chain.
     oi = structure.contract_oi if structure.contract_oi is not None else ctx.get("contract_oi")
     vol = structure.contract_volume if structure.contract_volume is not None else ctx.get("contract_vol")
+    spread = structure.spread_pct if structure.spread_pct is not None else ctx.get("spread_pct")
     if oi is None or vol is None:
         p_oi, p_vol = _proxy_liquidity(candidate)
         oi = oi if oi is not None else p_oi
         vol = vol if vol is not None else p_vol
+
+    # Primary signal: a tight bid/ask proves a market maker is present and the
+    # strike is tradeable — pass regardless of the reported depth (UW reports
+    # OI=0 / thin volume for demonstrably liquid names like NFLX/PLTR whose
+    # spreads are 1-5%). Depth floors below are only a backstop for when the
+    # spread is ALSO wide (a genuinely illiquid strike).
+    if spread is not None and spread <= liquid_spread:
+        return GateResult(
+            "G1", True,
+            f"tight spread {spread:.1%} ≤ {liquid_spread:.0%} — MM present "
+            f"(OI={oi} vol={vol}, depth waived)"
+        )
+
     if oi is None and vol is None:
         return GateResult("G1", True, "deferred: confirm OI/vol on live chain")
-    # Some feeds report OI=0 for very liquid names (SPY had vol 700-2600/strike
-    # with OI=0). Treat a zero/absent OI as *unknown*, not illiquid: when OI is
-    # missing, let volume carry the liquidity signal instead of hard-failing.
+    # Some feeds report OI=0 for very liquid names. Treat a zero/absent OI as
+    # *unknown*, not illiquid: when OI is missing, let volume carry the signal.
     if oi and oi > 0:
         ok = oi >= oi_min and (vol or 0) >= vol_min
     elif vol is not None:

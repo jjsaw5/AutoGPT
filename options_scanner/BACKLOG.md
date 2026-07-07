@@ -22,10 +22,17 @@ just delete) as they ship. Priority is a rough guide, not a promise.*
   accept higher risk to let bigger setups GO and generate outcomes. **Narrow
   `max_trade_risk` as the model is dialed in.** (Real combined BP is ~$1,200 in
   two accounts — see the Level-3 consolidation note if/when trading larger.)
-- [ ] **G1 volume floor.** `contract_vol_min: 100` per strike blocks otherwise-
-  strong multi-leg names (TSM scored 90, blocked on G1 volume). Options: make G1
-  OI-primary with a lower/￮ volume floor, or accept it as correct filtering.
-  *Decision pending — don't loosen blindly (reviewer's caution).*
+- [x] **G1 liquidity floor** *(decided — spread-primary).* The OI/vol depth
+  floors were false-negativing demonstrably liquid names (NFLX OI 308/vol 159,
+  PLTR OI 31/vol 19 — both with 1–5% spreads) because UW reports thin depth for
+  liquid strikes. Fix: G1 now passes on the **truest liquidity signal — a tight
+  bid/ask** (`liquid_spread_pct: 0.05`, a market maker quoting ≤5% proves the
+  strike is tradeable), and the depth floors drop to sane backstops
+  (`oi_min: 500→250`, `contract_vol_min: 100→50`) that only bite when the spread
+  is *also* wide. Validated live: NFLX now clears all 12 gates (its WATCH is a
+  pure score call, not a liquidity block); MSFT (vol 33, 8.6% spread) and META
+  (21.5% spread) still correctly fail. *Note:* a multi-leg condor's `spread_pct`
+  is the worst leg, so far-OTM wings can still gate a condor — correct behavior.
 
 ## 2. Enhancements — ready to build
 
@@ -44,10 +51,10 @@ just delete) as they ship. Priority is a rough guide, not a promise.*
   undersells it. DKNG at +42% with a C-grade fading thesis got WATCH, not a
   take-profit. Add a rule: deep-green (≥40%) + non-aligned thesis → TRIM/"bank
   it," not just watch.
-- [ ] **G1 gating liquid names early-session** *(observed).* NFLX/AMD/BAC (very
-  liquid) gate on G1 at 10:00 ET on their specific 7/20–7/24 strikes — thin
-  early-session per-strike volume and/or UW volume gaps. Revisit the G1 volume
-  floor / early-session handling (ties to the existing G1 volume-floor decision).
+- [x] **G1 gating liquid names early-session** *(fixed).* NFLX/AMD/BAC gated on
+  G1 at 10:00 ET from thin early-session per-strike volume / UW volume gaps. The
+  spread-primary G1 (see the resolved "G1 liquidity floor" decision above) fixes
+  this — a tight bid/ask proves liquidity even when early-session depth is thin.
 - [ ] **Confirmed-GO persistence rule** *(deferred — user said "not yet").* A GO
   counts as act-now only after persisting ≥2 consecutive sessions; a single-
   session GO shows as "provisional." Encodes the intraday-noise lesson. Small

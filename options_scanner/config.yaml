@@ -56,8 +56,15 @@ universe:
     - INTC
 
 gates:
-  oi_min: 500                     # G1 open interest floor
-  contract_vol_min: 100           # G1 contract volume floor
+  # G1 liquidity: depth floors are BACKSTOPS, not the primary signal. The truest
+  # proof a strike is tradeable is a tight bid/ask — a market maker quoting
+  # ≤ liquid_spread_pct is present regardless of what OI/vol the feed reports
+  # (UW reports OI=0 for very liquid names). So G1 passes on EITHER depth OR a
+  # tight spread; floors are lowered to sane backstops that only bite when the
+  # spread is also wide (a genuinely thin strike).
+  oi_min: 250                     # G1 open interest backstop (was 500)
+  contract_vol_min: 50            # G1 contract volume backstop (was 100)
+  liquid_spread_pct: 0.05         # G1 tight-spread override: ≤ this proves liquidity
   spread_max_pct: 0.10            # G2
   spread_max_pct_0dte: 0.05       # G2 short-dated
   underlying_dollar_vol_floor:    # G3 avg daily $ volume floor by cap tier

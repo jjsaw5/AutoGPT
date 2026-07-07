@@ -32,12 +32,31 @@ def test_g1_passes_on_volume_when_oi_is_zero(config):
     s.from_chain = True
     s.contract_oi = 0            # feed reported zero
     s.contract_volume = 1500     # but clearly being traded
+    s.spread_pct = None          # no spread info -> fall to depth
     g = config.gates
     res = _g1_contract_liquidity(make_candidate("SPY"), s, g, {})
     assert res.passed
-    # And a genuinely dead strike (OI 0, tiny volume) still fails.
+    # And a genuinely dead strike (OI 0, tiny volume, no tight spread) still fails.
     s.contract_volume = 1
     assert not _g1_contract_liquidity(make_candidate("SPY"), s, g, {}).passed
+
+
+def test_g1_tight_spread_proves_liquidity(config):
+    # NFLX/PLTR case: UW reports thin depth (OI 31, vol 19) for a demonstrably
+    # liquid name, but the bid/ask is 1.6% — a market maker is quoting tight.
+    # A tight spread proves the strike is tradeable regardless of reported depth.
+    from options_scanner.pipeline.gates import _g1_contract_liquidity
+    s = _long_call()
+    s.from_chain = True
+    s.contract_oi = 31           # below the 250 backstop
+    s.contract_volume = 19       # below the 50 backstop
+    s.spread_pct = 0.016         # but 1.6% spread -> MM present
+    g = config.gates
+    res = _g1_contract_liquidity(make_candidate("PLTR"), s, g, {})
+    assert res.passed and "tight spread" in res.detail
+    # A wide spread with the same thin depth is a genuinely illiquid strike -> fail.
+    s.spread_pct = 0.22          # 22% spread, no MM
+    assert not _g1_contract_liquidity(make_candidate("PLTR"), s, g, {}).passed
 
 
 def test_clean_candidate_passes_gates(config):
