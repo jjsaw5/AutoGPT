@@ -83,7 +83,13 @@ just delete) as they ship. Priority is a rough guide, not a promise.*
   flagged as IV-crush risk. *Follow-ups:* (1) **ex-dividend dates** — needs a
   dividend feed (OPEX done, ex-div stubbed); (2) scheduled scan-only runs have
   no held set, so earnings show as opportunity-only there; (3) swap curated
-  macro for the FMP economic-calendar API when wanted.
+  macro for the FMP economic-calendar API when wanted; (4) **earnings radar
+  assumes held = long premium** — it labels an earnings catalyst on a held name
+  "IV-crush risk on long premium," but a *short*-premium hold (credit spread /
+  condor, `is_long_premium=false`) *benefits* from the post-earnings IV crush.
+  Flip the framing by position: long premium → "IV-crush risk," short premium →
+  "IV crush works for you; gap-through-short-strike is the risk." (Surfaced on
+  the NFLX put credit spread, 7/7.)
 - [x] **Catalyst engine — timing layer** *(shipped, pending enable).* GitHub
   Actions `event-scan.yml` runs one extra scan at ~2:15pm ET on FOMC decision
   days (the only intraday event the 3×/day baseline misses; CPI/NFP at 8:30am
