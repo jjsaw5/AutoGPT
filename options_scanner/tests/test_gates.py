@@ -89,6 +89,18 @@ def test_g6_blocks_oversized_risk(config):
     assert not g6.passed  # 900 > 500 ceiling
 
 
+def test_g6_max_trade_risk_raises_ceiling(config):
+    # Learning mode: max_trade_risk lifts the G6 cap so a $450 trade that fails
+    # the %-based $400 ceiling passes once the override is set to $500.
+    c = make_candidate()
+    config.raw["account"]["max_trade_risk"] = 0      # disabled -> %-based $400 cap
+    r1 = evaluate_gates(c, _thesis(), _long_call(max_loss=450.0), config)
+    assert not next(r for r in r1.results if r.gate_id == "G6").passed
+    config.raw["account"]["max_trade_risk"] = 500    # override raises cap to $500
+    r2 = evaluate_gates(c, _thesis(), _long_call(max_loss=450.0), config)
+    assert next(r for r in r2.results if r.gate_id == "G6").passed
+
+
 def test_g7_blocks_at_position_cap(config):
     c = make_candidate()
     ctx = {"open_positions": 6}

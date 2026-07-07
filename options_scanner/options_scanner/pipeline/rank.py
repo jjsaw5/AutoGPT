@@ -121,7 +121,7 @@ def _decide(
 def _size(ec: EvaluatedCandidate, go: float, config: Config) -> None:
     """Size scales with score above the GO line, capped by G6 tiered ceilings."""
     standard = config.risk_standard()
-    high = config.risk_high_conviction()
+    high = config.per_trade_risk_cap()   # matches G6 (raised by max_trade_risk)
 
     composite = ec.effective_composite
     fraction = min(1.0, (composite - go) / max(1.0, 100.0 - go))

@@ -125,6 +125,18 @@ class Config:
     def risk_high_conviction(self) -> float:
         return self._risk_dollars("risk_high_conviction_pct", "risk_high_conviction_max", 500)
 
+    def max_trade_risk(self) -> float:
+        """Explicit per-trade risk ceiling ($). A 'learning-mode' override that
+        *raises* the G6 cap so bigger setups can green-light while we accumulate
+        data points. 0/absent → disabled (use the %-based ceiling). Narrow this
+        as the model is dialed in."""
+        return float(self.account.get("max_trade_risk", 0) or 0)
+
+    def per_trade_risk_cap(self) -> float:
+        """Effective G6 per-trade ceiling: the larger of the %-based
+        high-conviction ceiling and the explicit ``max_trade_risk`` override."""
+        return max(self.risk_high_conviction(), self.max_trade_risk())
+
     def max_open_risk(self) -> float:
         return self._risk_dollars("max_open_pct", "max_open_risk", 2000)
 

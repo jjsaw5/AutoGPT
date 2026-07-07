@@ -186,7 +186,7 @@ def _g5_zerodte_budget(structure, config, ctx) -> GateResult:
 
 
 def _g6_per_trade_risk(structure, config) -> GateResult:
-    ceiling = config.risk_high_conviction()
+    ceiling = config.per_trade_risk_cap()   # %-based, raised by max_trade_risk
     max_loss = structure.max_loss
     if max_loss is None:
         return GateResult("G6", True, "deferred: size on live chain")

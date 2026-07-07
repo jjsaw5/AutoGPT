@@ -14,10 +14,14 @@ just delete) as they ship. Priority is a rough guide, not a promise.*
 
 ## 1. Open decisions (need a human call)
 
-- [ ] **Account size.** Config `account.size` is **$5,000** (paper) but real
-  tradeable balances are ~**$1,381** (Individual) / ~**$798** (Agentic). One knob
-  flips all %-based sizing to reality. Deferred by choice — revisit before sizing
-  anything live.
+- [x] **Account size / risk tolerance** *(decided — learning mode).* Keep
+  `account.size` at **$5,000** (no capital added — nothing big enough greenlit
+  yet) and instead **loosen the per-trade capital gate** via `max_trade_risk:
+  500` (raises the G6 ceiling from the %-based $400 to a flat $500). Rationale:
+  prioritize framework refinement + data collection over capital optimization;
+  accept higher risk to let bigger setups GO and generate outcomes. **Narrow
+  `max_trade_risk` as the model is dialed in.** (Real combined BP is ~$1,200 in
+  two accounts — see the Level-3 consolidation note if/when trading larger.)
 - [ ] **G1 volume floor.** `contract_vol_min: 100` per strike blocks otherwise-
   strong multi-leg names (TSM scored 90, blocked on G1 volume). Options: make G1
   OI-primary with a lower/￮ volume floor, or accept it as correct filtering.
