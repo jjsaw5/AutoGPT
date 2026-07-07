@@ -58,6 +58,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     jrnl.add_argument("--note", default=None, help="annotate: the note text.")
     jrnl.add_argument("-v", "--verbose", action="store_true")
 
+    # review — critique an external/posted options book through our framework
+    rev = sub.add_parser(
+        "review", help="Review a posted options book (JSON) through our framework."
+    )
+    rev.add_argument("--positions", required=True,
+                     help="JSON list of external positions (ticker/option_type/strike/"
+                          "expiry/quantity/side/premium/sector/underlying_price).")
+    rev.add_argument("-v", "--verbose", action="store_true")
+
     # session — the full checklist in one operation
     sess = sub.add_parser(
         "session", help="Run the full session: scan + position review + history."
@@ -119,6 +128,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[recorded {result.history_rows} rows to durable history at {args.history}]")
         return 0
 
+    if args.command == "review":
+        return _review_command(args)
+
     if args.command == "session":
         return _session_command(args)
 
@@ -129,6 +141,18 @@ def main(argv: list[str] | None = None) -> int:
         return _history_command(args)
 
     return 1
+
+
+def _review_command(args) -> int:
+    import json
+    from datetime import datetime, timezone
+    from .review_external import ExternalPosition, review_book, render_review
+
+    data = json.loads(open(args.positions, encoding="utf-8").read())
+    positions = [ExternalPosition(**row) for row in data]
+    review = review_book(positions, now=datetime.now(timezone.utc))
+    print(render_review(review))
+    return 0
 
 
 def _session_command(args) -> int:

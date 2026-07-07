@@ -89,6 +89,13 @@ just delete) as they ship. Priority is a rough guide, not a promise.*
   (1) auto-run it on the top-N candidates as a standard session section;
   (2) persist confirmations to history/Turso alongside candidates.
 
+- [x] **Review-an-external-play tool** *(shipped).* `review_external.py` +
+  `cli review` critique a posted/online options book through our framework —
+  structure (naked vs defined), direction/premium concentration, correlation
+  cluster (G12), near-dated theta, lottery flags — with a verdict and "what
+  we'd do instead." Structural read is data-free; IV-fit/EV/catalyst scoring is
+  a follow-up (run the tickers through the scanner). See REVIEW.md.
+
 ## 3. Blocked on data (the calibration loop)
 
 *These can't be done well until the journal has a real sample of resolved
