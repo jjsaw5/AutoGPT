@@ -34,6 +34,16 @@ just delete) as they ship. Priority is a rough guide, not a promise.*
   *Follow-ups:* (1) active GO alerting to Slack/email (run summary is passive);
   (2) event-triggered runs (earnings/FOMC) from a catalyst calendar; (3) a
   Turso→JSONL export so scheduled-run history can backfill the git JSONL.
+- [ ] **Winner + fading-thesis → take-profit** *(observed live).* TRIM only fires
+  when `pnl_pct ≥ 0.40 AND aligned`. A big winner whose thesis has *faded to
+  mixed/opposed* (not aligned) falls through to WATCH ("tighten stop") — which
+  undersells it. DKNG at +42% with a C-grade fading thesis got WATCH, not a
+  take-profit. Add a rule: deep-green (≥40%) + non-aligned thesis → TRIM/"bank
+  it," not just watch.
+- [ ] **G1 gating liquid names early-session** *(observed).* NFLX/AMD/BAC (very
+  liquid) gate on G1 at 10:00 ET on their specific 7/20–7/24 strikes — thin
+  early-session per-strike volume and/or UW volume gaps. Revisit the G1 volume
+  floor / early-session handling (ties to the existing G1 volume-floor decision).
 - [ ] **Confirmed-GO persistence rule** *(deferred — user said "not yet").* A GO
   counts as act-now only after persisting ≥2 consecutive sessions; a single-
   session GO shows as "provisional." Encodes the intraday-noise lesson. Small
