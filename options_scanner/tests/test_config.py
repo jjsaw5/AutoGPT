@@ -6,7 +6,7 @@ def test_config_loads_core_knobs():
     cfg = load_config(load_env=False)
     assert cfg.account["size"] == 5000
     assert cfg.account["max_open_risk"] == 2000
-    assert cfg.account["max_positions"] == 6
+    assert cfg.account["max_positions"] == 10
     assert cfg.go_threshold == 72
     assert cfg.watch_threshold == 58
     assert cfg.weights == {"P1": 25, "P2": 22, "P3": 20, "P4": 18, "P5": 10, "P6": 5}

@@ -121,11 +121,16 @@ def test_g6_max_trade_risk_raises_ceiling(config):
 
 
 def test_g7_blocks_at_position_cap(config):
+    cap = int(config.raw["account"]["max_positions"])
     c = make_candidate()
-    ctx = {"open_positions": 6}
-    report = evaluate_gates(c, _thesis(), _long_call(), config, context=ctx)
+    # At the cap → blocked.
+    report = evaluate_gates(c, _thesis(), _long_call(), config, context={"open_positions": cap})
     g7 = next(r for r in report.results if r.gate_id == "G7")
     assert not g7.passed
+    # One slot free → passes (risk permitting).
+    report2 = evaluate_gates(c, _thesis(), _long_call(), config, context={"open_positions": cap - 1})
+    g7b = next(r for r in report2.results if r.gate_id == "G7")
+    assert g7b.passed
 
 
 def test_g7_blocks_over_aggregate_risk(config):

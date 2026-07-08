@@ -15,7 +15,11 @@ account:
   speculative_pct: 0.03           # 3%  = $150 @ $5k  (speculative / 0DTE)
   max_open_pct: 0.30              # 30% = $1500 @ $5k (aggregate open risk; was 40%/$2000)
   max_correlated_pct: 0.15        # 15% = $750 @ $5k  (per-underlying/sector cluster)
-  max_positions: 6                # G7 concurrent position cap
+  # G7 concurrent-position cap. Raised 6 -> 10 (7/8): real combined buying power
+  # spans the Individual + Agentic books, so a 6-slot cap was leaving capital
+  # idle and blocking otherwise-valid setups. 10 small defined-risk spreads
+  # (~$150 each) stays within the $1,500 aggregate-risk cap below.
+  max_positions: 10               # G7 concurrent position cap (was 6)
   # Legacy fixed-$ fallbacks (used only if the _pct knobs above are absent):
   risk_standard_max: 200
   risk_high_conviction_max: 500
