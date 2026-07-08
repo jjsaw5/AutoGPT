@@ -58,6 +58,7 @@ universe:
     - XOM
     - BAC
     - INTC
+    - PLTR                        # added 7/8 — actively tracked, liquid, high-vol name
 
 gates:
   # G1 liquidity: depth floors are BACKSTOPS, not the primary signal. The truest
