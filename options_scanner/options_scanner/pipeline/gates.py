@@ -277,6 +277,17 @@ def _g12_correlation(candidate, thesis, structure, config, ctx) -> GateResult:
     exposure = ctx.get("open_exposure")
     if not exposure:
         return GateResult("G12", True, "deferred: no open-exposure data")
+    # Same-underlying concentration: already holding this exact name is a cluster
+    # by definition — and usually the scanner re-proposing a position you already
+    # have. Block it outright so the book can't silently double up on one name.
+    if any(
+        e.get("ticker") and e["ticker"].upper() == candidate.ticker.upper()
+        for e in exposure
+    ):
+        return GateResult(
+            "G12", False,
+            f"already hold {candidate.ticker} — close/roll before stacking another position",
+        )
     new_risk = structure.max_loss or 0.0
     new_dir = thesis.direction.value
     new_sector = candidate.sector

@@ -97,13 +97,23 @@ the live book and writing it to a positions file:
    - `ticker`, `account`
    - `direction` (+1 long-biased / −1 short-biased / 0 neutral)
    - `is_long_premium` (long option / debit spread = true; short premium = false)
-   - `pnl_pct` (current P&L as a fraction of cost/risk)
+   - `pnl_pct` (**live** P&L as a fraction of risk) **and `pnl_asof`** (the ISO
+     timestamp you pulled it). *`pnl_asof` is what marks the number live:* the
+     review stamps any row **without** it as `*` stale ("entry value, not live —
+     refresh before trusting the stop triggers"), because the CLOSE/stop logic
+     keys off `pnl_pct` — freshness there is correctness, not cosmetics.
    - `dte`, `days_to_earnings`
+   - `sector`, `risk` (max-loss $) — optional, feed the G12 correlation cluster.
 3. Write them to `runs/positions.json` as a JSON list.
 
 Then run the session command below. If the positions file is omitted, the
 session runs **scan-only** and prints a note that the book review was skipped —
 so a missing review is loud, never silent (the failure mode we hit before).
+
+**Held names auto-block (G12):** the session feeds the book into the scan as
+`open_exposure`, so any candidate on a name you **already hold** is blocked with
+`gate G12 — already hold <TICKER>` instead of being re-proposed as a fresh GO.
+The scan surfaces new opportunities, never a double-up on what you already own.
 
 ---
 

@@ -61,7 +61,41 @@ def test_session_scan_only_when_no_positions(config, tmp_path):
     assert "no open positions" in result.readout.lower()
 
 
-def test_unscannable_holding_still_reviewed(config):
+def test_exposure_from_positions_maps_direction_and_ticker():
+    from options_scanner.session import _exposure_from_positions
+    pos = [
+        PositionInput("NFLX", direction=1, is_long_premium=False, risk=311, sector="Comm"),
+        PositionInput("PFE", direction=-1, is_long_premium=True),
+    ]
+    exp = _exposure_from_positions(pos)
+    assert exp[0] == {"ticker": "NFLX", "direction": "bullish", "sector": "Comm", "risk": 311.0}
+    assert exp[1]["ticker"] == "PFE" and exp[1]["direction"] == "bearish" and exp[1]["risk"] == 0.0
+
+
+def test_session_blocks_candidate_on_held_name(config):
+    # Holding NFLX => the scan's NFLX candidate must fail G12 (already held),
+    # so the session never re-proposes a name that's already on the book.
+    scanner = Scanner(config)
+    pos = [PositionInput("NFLX", direction=1, is_long_premium=False, pnl_pct=0.0, dte=17)]
+    result = SessionRunner(scanner).run(pos)
+    nflx = next((ec for ec in result.scan.evaluated if ec.ticker == "NFLX"), None)
+    assert nflx is not None
+    g12 = next(r for r in nflx.gates.results if r.gate_id == "G12")
+    assert not g12.passed and "already hold" in g12.detail
+
+
+def test_review_render_flags_stale_pnl(config):
+    # A holding with no pnl_asof shows a '*' and the stale-book footnote; a
+    # live-stamped one does not.
+    from options_scanner.session import _render_reviews, _review_from_scan
+    stale = PositionInput("ZZZZ", direction=1, is_long_premium=True, pnl_pct=-0.5)
+    live = PositionInput("YYYY", direction=1, is_long_premium=True, pnl_pct=-0.5,
+                         pnl_asof="2026-07-08T14:00:00Z")
+    rows = [(_review_from_scan(p, {}), p) for p in (stale, live)]
+    out = _render_reviews(rows)
+    assert "-50%*" in out and "entry value, not live" in out
+    # The live-stamped row's P&L carries no star.
+    assert "-50% " in out or "-50%\n" in out
     # A holding whose underlying isn't scannable falls back to a neutral thesis
     # rather than dropping off the book.
     scanner = Scanner(config)

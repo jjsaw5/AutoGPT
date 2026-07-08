@@ -90,6 +90,18 @@ just delete) as they ship. Priority is a rough guide, not a promise.*
   Flip the framing by position: long premium → "IV-crush risk," short premium →
   "IV crush works for you; gap-through-short-strike is the risk." (Surfaced on
   the NFLX put credit spread, 7/7.)
+- [x] **G12 auto-catches held names** *(shipped 7/8).* The session now feeds the
+  held book into the scan as `open_exposure`, and G12 blocks any candidate on a
+  name already held (`already hold <TICKER> — close/roll before stacking`).
+  Stops the scanner re-proposing a position you already own (it was flagging a
+  NFLX condor GO while we held the NFLX put spread). Held rows show `gate G12`;
+  new-name GOs surface instead (BAC took NFLX's #1 slot once NFLX was blocked).
+- [x] **Live P&L in the review** *(shipped 7/8).* `PositionInput` gained
+  `pnl_asof`; the review marks any P&L **without** a timestamp as `*` stale
+  ("entry value, not live — refresh before trusting the stop triggers"), since
+  the CLOSE/stop logic keys off `pnl_pct`. The headless engine can't reach the
+  Robinhood MCP, so the agent refreshes `pnl_pct`+`pnl_asof` from the live book
+  before the review (per SESSION.md); a stale book is now loud, never silent.
 - [x] **Catalyst engine — timing layer** *(shipped, pending enable).* GitHub
   Actions `event-scan.yml` runs one extra scan at ~2:15pm ET on FOMC decision
   days (the only intraday event the 3×/day baseline misses; CPI/NFP at 8:30am

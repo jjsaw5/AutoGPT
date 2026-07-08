@@ -51,6 +51,9 @@ class PositionInput:
     days_to_earnings: Optional[int] = None
     account: str = ""           # which book (e.g. "Individual" / "Agentic")
     structure: str = ""         # Robinhood name of the held structure (from legs)
+    sector: Optional[str] = None  # for G12 correlation clustering (optional)
+    risk: Optional[float] = None  # position max-loss $ (for G12 cluster math)
+    pnl_asof: Optional[str] = None  # ISO ts of the P&L; absent => stale/entry value
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "PositionInput":
@@ -63,6 +66,9 @@ class PositionInput:
             days_to_earnings=d.get("days_to_earnings"),
             account=str(d.get("account", "")),
             structure=str(d.get("structure", "")),
+            sector=d.get("sector"),
+            risk=d.get("risk"),
+            pnl_asof=d.get("pnl_asof"),
         )
 
 
@@ -83,6 +89,21 @@ class SessionResult:
 
 
 _DIR_TO_INT = {Direction.BULLISH: 1, Direction.BEARISH: -1, Direction.NEUTRAL: 0}
+_INT_TO_DIR = {1: "bullish", -1: "bearish", 0: "neutral"}
+
+
+def _exposure_from_positions(positions: list[PositionInput]) -> list[dict[str, Any]]:
+    """Turn the held book into the ``open_exposure`` rows G12 consumes so the
+    scan auto-catches names/sectors already on the book (no double-ups)."""
+    return [
+        {
+            "ticker": p.ticker,
+            "direction": _INT_TO_DIR.get(p.direction, "neutral"),
+            "sector": p.sector,
+            "risk": float(p.risk) if p.risk is not None else 0.0,
+        }
+        for p in positions
+    ]
 
 
 def _review_from_scan(pos: PositionInput, evaluated_by_ticker: dict) -> PositionReview:
@@ -139,19 +160,31 @@ def _render_reviews(rows: list[tuple[PositionReview, PositionInput]]) -> str:
     if not rows:
         return "[4] POSITION REVIEW\n  (no open positions supplied)\n"
     header = (f"  {'TICKER':<6} {'ACCT':<11} {'STRUCTURE':<18} {'GRADE':<5} "
-              f"{'ACTION':<6} {'P&L':>5} {'DTE':>5}  WHY")
+              f"{'ACTION':<6} {'P&L':>6} {'DTE':>5}  WHY")
     lines = ["[4] POSITION REVIEW  (grade + action; recommend-only)",
              header, "  " + "-" * (len(header) - 2)]
     # CLOSE first, then TRIM/ROLL, then HOLD/WATCH — most-urgent on top.
     order = {"CLOSE": 0, "ROLL": 1, "TRIM": 2, "HOLD": 3, "WATCH": 4}
+    any_stale = False
     for r, pos in sorted(rows, key=lambda x: order.get(x[0].action, 9)):
-        pnl = f"{pos.pnl_pct:+.0%}" if pos.pnl_pct is not None else "n/a"
+        if pos.pnl_pct is None:
+            pnl = "n/a"
+        else:
+            # A P&L with no as-of timestamp is the entry value, not live — mark it
+            # so a stale book is never mistaken for a live one (the stop logic
+            # keys off this number, so freshness is correctness, not cosmetics).
+            stale = not pos.pnl_asof
+            any_stale = any_stale or stale
+            pnl = f"{pos.pnl_pct:+.0%}" + ("*" if stale else "")
         dte = f"{pos.dte}d" if pos.dte is not None else "n/a"
         struct = pos.structure or "—"
         lines.append(
             f"  {r.ticker:<6} {pos.account:<11} {struct:<18} {r.grade:<5} "
-            f"{r.action:<6} {pnl:>5} {dte:>5}  {r.reason}"
+            f"{r.action:<6} {pnl:>6} {dte:>5}  {r.reason}"
         )
+    if any_stale:
+        lines.append("  * P&L is the entry value, not live — refresh the book "
+                     "from Robinhood before trusting the stop triggers.")
     return "\n".join(lines) + "\n"
 
 
@@ -172,6 +205,15 @@ class SessionRunner:
     ) -> SessionResult:
         now = now or datetime.now(timezone.utc)
         held = [p.ticker for p in positions]
+
+        # Feed the held book into the gate context as open_exposure so G12
+        # auto-catches names/sectors already held (a candidate on a name you
+        # already own is blocked instead of silently re-proposed). Merge with
+        # any exposure the caller already supplied.
+        context = dict(context or {})
+        context["open_exposure"] = (
+            list(context.get("open_exposure") or []) + _exposure_from_positions(positions)
+        )
 
         # 1-2, 4: scan the universe PLUS every held underlying, but let the
         # session own history writing (history_dir=None here) so candidates and

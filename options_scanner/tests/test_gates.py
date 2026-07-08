@@ -176,6 +176,23 @@ def test_g12_passes_under_cap(config):
     assert g12.passed  # opposite direction, different sector => no cluster
 
 
+def test_g12_blocks_already_held_name(config):
+    # A candidate on a name already on the book is a double-up — blocked
+    # outright, regardless of direction/sector cluster math.
+    c = make_candidate("NFLX", sector="Communication Services")
+    ctx = {"open_exposure": [
+        {"ticker": "NFLX", "direction": "neutral", "sector": "Communication Services", "risk": 300},
+    ]}
+    report = evaluate_gates(c, _thesis(), _long_call(), config, context=ctx)
+    g12 = next(r for r in report.results if r.gate_id == "G12")
+    assert not g12.passed and "already hold NFLX" in g12.detail
+    # A *different* name in the same exposure list is not blocked by this rule.
+    c2 = make_candidate("DIS", sector="Communication Services")
+    report2 = evaluate_gates(c2, _thesis(direction=Direction.NEUTRAL), _long_call(max_loss=100), config, context=ctx)
+    g12b = next(r for r in report2.results if r.gate_id == "G12")
+    assert g12b.passed  # neutral dir + small risk, no same-ticker
+
+
 def test_g12_defers_without_exposure(config):
     c = make_candidate()
     report = evaluate_gates(c, _thesis(), _long_call(), config)
