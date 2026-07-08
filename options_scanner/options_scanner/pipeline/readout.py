@@ -163,7 +163,7 @@ def _distance_to_go(ec: EvaluatedCandidate, go: float) -> str:
     if failed:
         return "gate " + ",".join(failed)
     if ec.decision == Decision.GO:
-        return "GO ✓"
+        return "GO ◐ provis." if ec.go_persistence == "provisional" else "GO ✓"
     gap = go - ec.effective_composite
     if gap <= 0:
         # Score already clears the GO line — the block is execution, not score.
@@ -268,6 +268,10 @@ def _entry_line(ec: EvaluatedCandidate) -> str:
         contracts = 1
         if st.max_loss and ec.suggested_size:
             contracts = max(1, round(ec.suggested_size / st.max_loss))
+        if ec.go_persistence == "provisional":
+            # GO-grade but first recent session — don't greenlight entry yet.
+            return (f"◐ PROVISIONAL GO (1st session — hold for confirmation, "
+                    f"expect noise): would {play.lower()} · {contracts}×")
         return f"▶ ENTRY: {play} · {contracts}×  (${ec.suggested_size:.0f} risk)"
 
     # WATCH — say plainly what's holding it back.

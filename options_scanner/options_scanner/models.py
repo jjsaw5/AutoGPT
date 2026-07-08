@@ -250,6 +250,7 @@ class EvaluatedCandidate:
     biggest_risk: str = ""
     regime_adj: float = 0.0          # market-regime nudge applied to the composite
     exit_plan: Any = None            # ExitPlan (targets/stops/invalidation)
+    go_persistence: str = ""         # GO only: "confirmed" | "provisional" (persistence.py)
 
     @property
     def ticker(self) -> str:

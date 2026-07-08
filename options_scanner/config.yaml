@@ -85,6 +85,12 @@ scoring:
   weights: {P1: 25, P2: 22, P3: 20, P4: 18, P5: 10, P6: 5}
   go_threshold: 72
   watch_threshold: 58
+  # GO persistence (intraday-noise guard): a GO is only "act-now" once our logic
+  # has flagged the name GO-grade across this many recent sessions. A first-time
+  # GO shows as "provisional — hold for confirmation" (don't enter on one print).
+  # Set go_persistence_sessions: 1 to disable (every GO is act-now).
+  go_persistence_sessions: 2      # sessions at GO-grade before a GO is confirmed
+  go_persistence_lookback: 4      # how many recent prior scans to look back over
 
 market_context:
   enabled: true                    # cross-asset risk-on/off regime (once per scan)

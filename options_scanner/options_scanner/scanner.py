@@ -106,6 +106,7 @@ class Scanner:
         log_path: str | None = None,
         journal_path: str | None = None,
         history_dir: str | None = None,
+        history_read_dir: str | None = None,
         now: datetime | None = None,
     ) -> ScanResult:
         now = now or datetime.now(timezone.utc)
@@ -156,6 +157,12 @@ class Scanner:
 
         rank_and_decide(evaluated, self.config, regime=regime)
 
+        # GO persistence — corroborate each fresh GO against recent history so a
+        # single-scan GO shows as "provisional" (hold for confirmation) rather
+        # than "act now". Read-only lookback; the write dir doubles as the read
+        # dir for a plain scan, and a session passes history_read_dir explicitly.
+        self._annotate_persistence(evaluated, history_read_dir or history_dir)
+
         # Catalyst radar — forward view of earnings (reused from theses) + curated
         # macro + computed OPEX; held names flagged as risk vs. opportunity.
         catalysts = None
@@ -202,6 +209,46 @@ class Scanner:
             shadows_recorded=shadows_recorded, history_rows=history_rows,
             regime=regime,
         )
+
+    def _annotate_persistence(self, evaluated, read_dir) -> None:
+        """Tag each GO as 'confirmed' or 'provisional' by looking back at the
+        ticker's recent history in the local mirror. No history (or no read_dir)
+        => every GO is provisional: we can't confirm it, so we don't greenlight."""
+        from .models import Decision
+        from .persistence import go_persistence_status, PROVISIONAL
+
+        gos = [ec for ec in evaluated if ec.decision == Decision.GO]
+        if not gos:
+            return
+        scoring = self.config.raw.get("scoring", {})
+        min_sessions = int(scoring.get("go_persistence_sessions", 2))
+        lookback = int(scoring.get("go_persistence_lookback", 4))
+        go_thr = self.config.go_threshold
+
+        if not read_dir or min_sessions <= 1:
+            # Can't verify (no history) or persistence disabled.
+            status = PROVISIONAL if (read_dir is None and min_sessions > 1) else "confirmed"
+            for ec in gos:
+                ec.go_persistence = status if min_sessions > 1 else "confirmed"
+            return
+
+        db = None
+        try:
+            db = SqliteQueryDB(f"{read_dir}/scanner.sqlite")
+            for ec in gos:
+                timeline = db.ticker_timeline(ec.ticker)  # prior scans only
+                ec.go_persistence = go_persistence_status(
+                    timeline, go_threshold=go_thr,
+                    min_sessions=min_sessions, lookback=lookback,
+                )
+        except Exception as exc:  # never let a history hiccup abort a scan
+            logger.warning("persistence annotation skipped: %s", exc)
+            for ec in gos:
+                if not ec.go_persistence:
+                    ec.go_persistence = PROVISIONAL
+        finally:
+            if db is not None:
+                db.close()
 
     def _persist_history(
         self, evaluated, *, scan_id, timestamp, regime, history_dir,

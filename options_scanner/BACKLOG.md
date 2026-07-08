@@ -55,10 +55,16 @@ just delete) as they ship. Priority is a rough guide, not a promise.*
   G1 at 10:00 ET from thin early-session per-strike volume / UW volume gaps. The
   spread-primary G1 (see the resolved "G1 liquidity floor" decision above) fixes
   this — a tight bid/ask proves liquidity even when early-session depth is thin.
-- [ ] **Confirmed-GO persistence rule** *(deferred — user said "not yet").* A GO
-  counts as act-now only after persisting ≥2 consecutive sessions; a single-
-  session GO shows as "provisional." Encodes the intraday-noise lesson. Small
-  change to the decision logic + a lookback into history.
+- [x] **Confirmed-GO persistence rule** *(shipped 7/8).* A GO shows as
+  **provisional** ("hold for confirmation, expect noise") until our logic has
+  flagged the name GO-grade across `go_persistence_sessions` (default 2) recent
+  scans; then it becomes **confirmed** ("▶ ENTRY"). Read-only lookback into the
+  candidate history (`persistence.py`); knobs in `scoring:`. Encodes the
+  intraday-noise lesson (SPY, then BAC). *Nuance:* this guards **score**
+  stability across sessions — it does NOT guarantee the price won't move against
+  you (BAC's score persisted GO-grade while its price fell). One layer, not a
+  full safeguard. *Follow-up:* persist the confirmed/provisional status to the
+  history schema so we can measure whether confirmed GOs actually outperform.
 
 - [x] **Durable history → Turso** *(shipped).* Phase 1: append-only JSONL under
   `history/` (committed — the source of truth) + a rebuildable local SQLite query

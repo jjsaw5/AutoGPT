@@ -220,7 +220,7 @@ class SessionRunner:
         # reviews land together under one scan_id.
         scan = self.scanner.scan(
             extra_tickers=held, held_tickers=held, context=context,
-            journal_path=journal_path, now=now,
+            journal_path=journal_path, history_read_dir=history_dir, now=now,
         )
         by_ticker = {ec.ticker: ec for ec in scan.evaluated}
 
