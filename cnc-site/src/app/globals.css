@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-steel-950 text-steel-300 antialiased;
+  }
+  ::selection {
+    @apply bg-hazard-500 text-steel-950;
+  }
+}
+
+@layer components {
+  .container-wide {
+    @apply mx-auto w-full max-w-6xl px-5 sm:px-8;
+  }
+
+  /* Uppercase, wide-tracked machine label */
+  .label {
+    @apply font-mono text-xs uppercase tracking-[0.25em] text-steel-400;
+  }
+
+  .heading {
+    @apply font-display font-semibold uppercase tracking-wide text-white;
+  }
+
+  /* Thin amber corner-bracket frame used around media */
+  .frame {
+    @apply relative border border-steel-700 bg-steel-900;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 font-mono text-xs font-semibold uppercase tracking-[0.2em] transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-hazard-500 px-6 py-3 text-steel-950 hover:bg-hazard-400;
+  }
+  .btn-ghost {
+    @apply btn border border-steel-600 px-6 py-3 text-steel-300 hover:border-hazard-500 hover:text-hazard-400;
+  }
+
+  .input {
+    @apply w-full border border-steel-700 bg-steel-900 px-4 py-3 text-sm text-white placeholder-steel-500 outline-none transition-colors focus:border-hazard-500;
+  }
+
+  .field-label {
+    @apply mb-2 block font-mono text-xs uppercase tracking-[0.15em] text-steel-400;
+  }
+
+  .hazard-bar {
+    @apply h-1.5 w-full bg-hazard-stripes;
+  }
+}
