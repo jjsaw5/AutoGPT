@@ -66,9 +66,14 @@ from whichever payload carries it.
 
 ```bash
 cd tools/0dte
-python -m odte.cli signal --symbol SPY  --broker-data /tmp/odte_broker.json
-python -m odte.cli signal --symbol QQQ  --broker-data /tmp/odte_broker.json
+python -m odte.cli signal --symbol SPY --broker-data /tmp/odte_broker.json --use-uw
+python -m odte.cli signal --symbol QQQ --broker-data /tmp/odte_broker.json --use-uw
 ```
+
+Drop `--use-uw` if `UW_API_KEY` is not exported; it no-ops safely either
+way. When it is on, report the `flow` line alongside the regime — a strong
+sector tide with faded ticker flow is worth saying out loud rather than
+letting it silently inflate conviction.
 
 Add `--trades-taken N --losses N` if the user has already traded today; the
 risk-budget gate depends on it. Ask if you don't know and it's after 10:00.

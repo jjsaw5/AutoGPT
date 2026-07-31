@@ -130,6 +130,11 @@ def render(signal: Signal) -> str:
         f"  {DIM}regime{RESET}  {signal.regime.detail}",
     ]
 
+    if signal.uw_detail:
+        lines.append(
+            f"  {DIM}flow  {RESET}  {signal.uw_detail} (bias {signal.uw_bias:+.2f})"
+        )
+
     lv = signal.levels
 
     def fmt(value):

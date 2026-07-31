@@ -78,6 +78,8 @@ def evaluate(
         levels=levels,
         gates=gates,
         plan=plan,
+        uw_detail=uw.detail if uw is not None else None,
+        uw_bias=uw.bias if uw is not None else 0.0,
     )
 
 

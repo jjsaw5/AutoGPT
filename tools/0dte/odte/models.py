@@ -125,6 +125,8 @@ class Signal:
     levels: Levels
     gates: list[Gate] = field(default_factory=list)
     plan: TradePlan | None = None
+    uw_detail: str | None = None
+    uw_bias: float = 0.0
 
     @property
     def blocking_gates(self) -> list[Gate]:
@@ -152,6 +154,10 @@ class Signal:
                 {"name": g.name, "passed": g.passed, "detail": g.detail}
                 for g in self.gates
             ],
+            "unusual_whales": {
+                "bias": round(self.uw_bias, 3),
+                "detail": self.uw_detail,
+            },
             "plan": (
                 {
                     "direction": self.plan.direction,

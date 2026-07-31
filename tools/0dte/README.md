@@ -35,7 +35,7 @@ and order entry stay manual by design.
 | **Premarket high/low** | **Robinhood MCP** `get_equity_historicals` | Working, manual step |
 | Live quote | Robinhood MCP, else FMP | Working |
 | 0DTE chain / contracts | Robinhood MCP | Working, manual step |
-| Flow confirmation | Unusual Whales | **Not wired — no credential** |
+| Flow confirmation | Unusual Whales `net-prem-ticks`, `sector-tide` | Working, verified |
 
 Two things are worth knowing before you rely on this:
 
@@ -45,15 +45,28 @@ the entry rules, those levels come from the broker feed instead. Robinhood's
 `get_equity_historicals` with `bounds='extended'` tags each bar `pre` /
 `reg` / `post`, which is what makes them computable.
 
-**Unusual Whales is not connected.** There is no `UW_API_KEY` in this
-environment and no UW connector installed, despite the plan assuming one.
-`odte/uw.py` implements the adapter against UW's documented v1 shape, but
-none of it has been run against the live API. It is gated so that its
-absence changes nothing: without a key it returns `None`, and even when
-present it only nudges *conviction* — it can neither open a trade the price
-gates rejected nor veto one they accepted. So a wrong field name costs you a
-slightly mis-scored number, not a bad entry. Set `UW_API_KEY` and pass
-`--use-uw` to reconcile it against a real payload.
+**Unusual Whales is wired and verified.** Two endpoints, both returning
+`data` oldest-first with premium values as decimal *strings*. Verifying
+against the live API turned up two things the docs alone did not:
+
+- `stock/{ticker}/net-prem-ticks` returns **per-minute buckets**, not a
+  running total. Sampling only the last row reads one minute of noise — on
+  2026-07-30 that scored SPY at a maximal **+1.00** while the trailing half
+  hour was actually flat (**+0.03**). The client sums a trailing 30-minute
+  window instead.
+- `market/{sector}/sector-tide` is **cumulative** for the session, and takes
+  a sector *name*. Passing `XLK` returns `400 Invalid sector`; the client
+  maps ETF tickers to names.
+
+Normalisation is scale-free: each reading is divided by the largest absolute
+value that series reached during the session. The obvious alternative,
+`(call − put) / (|call| + |put|)`, collapses to exactly ±1 whenever call and
+put premium have opposite signs — which is most days — so it carries almost
+no information.
+
+UW stays a *confirmation* layer regardless: it only adjusts conviction, and
+can neither open a trade the price gates rejected nor veto one they
+accepted. Without `UW_API_KEY` it no-ops and everything else still runs.
 
 Legacy FMP `/api/v3/` routes are dead for keys issued after 2025-08-31 —
 they return a "Legacy Endpoint" error. Everything here uses `/stable/`.
@@ -132,6 +145,7 @@ thread was worried about.
 cd tools/0dte
 pip install -r requirements.txt
 export FMP_API_KEY=...        # already set in this workspace
+export UW_API_KEY=...         # optional; enables --use-uw
 
 # regime only — cheap, one API call, good for a pre-open read
 python -m odte.cli regime
@@ -139,7 +153,13 @@ python -m odte.cli regime
 # full signal (needs premarket data, see below)
 python -m odte.cli signal --symbol SPY --broker-data premarket.json
 python -m odte.cli signal --symbol QQQ --broker-data premarket.json --json
+
+# with flow confirmation
+python -m odte.cli signal --symbol SPY --broker-data premarket.json --use-uw
 ```
+
+Keep `UW_API_KEY` in your shell or a local `.env` — it is a credential and
+is deliberately not stored anywhere in this repo.
 
 ### The premarket step
 
@@ -178,7 +198,7 @@ odte/models.py       Bar / Quote / Signal / Gate types shared by both feeds
 odte/indicators.py   EMA, SMA, ATR, VWAP — pure, fully tested
 odte/fmp.py          FMP stable client
 odte/brokers.py      Robinhood MCP payload -> Bar / Quote
-odte/uw.py           Unusual Whales adapter (optional, unwired)
+odte/uw.py           Unusual Whales flow confirmation (optional)
 odte/regime.py       tech-strength scoring
 odte/levels.py       premarket / opening range / indicator assembly
 odte/signal.py       the six gates and the trade plan
@@ -186,9 +206,10 @@ odte/contract.py     0DTE contract filtering and position sizing
 odte/cli.py          `python -m odte.cli`
 ```
 
-`python -m pytest` — 55 tests covering the indicator maths, regime
+`python -m pytest` — 73 tests covering the indicator maths, regime
 classification (including the narrow-leadership case), every gate's reject
-path, contract filtering, sizing, and parsing of a real Robinhood payload.
+path, contract filtering, sizing, parsing of a real Robinhood payload, and
+the UW window/cumulative semantics.
 
 ## Tuning
 
