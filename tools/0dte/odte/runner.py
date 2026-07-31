@@ -118,6 +118,12 @@ def main(argv: list[str] | None = None) -> int:
         "--dry-run", action="store_true", help="print the schedule and exit"
     )
     parser.add_argument("--no-record", action="store_true")
+    parser.add_argument(
+        "--until",
+        help="stop at this ET time (HH:MM). Lets one session be split into "
+        "separate morning and afternoon runs so nothing is spent idling "
+        "through the midday window",
+    )
     args = parser.parse_args(argv)
 
     config = DEFAULT_CONFIG
@@ -131,6 +137,12 @@ def main(argv: list[str] | None = None) -> int:
     if not hours.trading:
         print(f"{day} is not a trading day ({hours.note}). Nothing to do.")
         return 0
+
+    stop_at = schedule["flat_by"]
+    if args.until:
+        requested = datetime.strptime(args.until, "%H:%M").time()
+        # An early close still wins; never run past the adjusted flat time.
+        stop_at = min(requested, schedule["flat_by"])
 
     if hours.early_close:
         print(
@@ -170,13 +182,13 @@ def main(argv: list[str] | None = None) -> int:
 
     print(
         f"{BOLD}0DTE runner{RESET} {day} — {', '.join(symbols)}, "
-        f"flat by {schedule['flat_by']:%H:%M}"
+        f"until {stop_at:%H:%M}"
     )
 
     while True:
         now = datetime.now(MARKET_TZ)
-        if now.date() != day or now.time() >= schedule["flat_by"]:
-            print(f"{now:%H:%M} session over.")
+        if now.date() != day or now.time() >= stop_at:
+            print(f"{now:%H:%M} run complete (stop {stop_at:%H:%M}).")
             return 0
 
         if in_entry_window(now, config, schedule["no_entry_after"]):

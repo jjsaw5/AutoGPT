@@ -206,9 +206,43 @@ after each close so the bar has settled.
 | 16:10 | `report` | Log the day once the close has settled |
 
 Do not run 11:30–13:30 or before 09:40 — the timing gate rejects those
-anyway, so it is pure API burn. Add a market-calendar check before
-scheduling: holidays and half-days (13:00 close) break both the afternoon
-window and the 15:30 flat rule.
+anyway, so it is pure API burn.
+
+### The runner
+
+`odte/runner.py` implements that schedule as a **sleep-to-the-next-bar
+loop**, not a set of cron entries. Cron schedulers drift — GitHub Actions
+routinely fires five to twenty minutes late — and against five-minute entry
+windows that means silently missing setups. A loop keeps its own cadence, so
+scheduler lag can only delay startup, never the ticks.
+
+```bash
+python -m odte.runner --dry-run              # print the plan, no API calls
+python -m odte.runner --once                 # single evaluation
+python -m odte.runner --use-uw --until 11:30 # morning leg
+```
+
+`odte/calendar.py` keeps it honest about the exchange calendar: weekends and
+closed holidays are skipped, and half-days pull the cutoffs in — a 13:00
+close moves no-entry-after to 12:00 and flat-by to 12:30 rather than leaving
+a 15:30 flat rule two and a half hours after the bell. A calendar outage
+degrades to trading rather than silently cancelling the session.
+
+### GitHub Actions
+
+`.github/workflows/0dte.yml` runs two short jobs per session (morning to
+11:30, afternoon to 15:30) instead of one long one, so nothing is billed
+idling through the midday no-trade window and each job stays far under the
+6-hour ceiling.
+
+GitHub cron is UTC and ignores DST, so each leg is scheduled twice — EDT and
+EST — and a guard step exits the wrong copy immediately. Required secrets:
+`FMP_API_KEY`, `UW_API_KEY`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`.
+
+Two things to know about scheduling in a **fork**: Actions are disabled by
+default until enabled in the Actions tab, and GitHub auto-disables scheduled
+workflows after 60 days of repository inactivity. A small dedicated repo
+avoids both, plus the upstream sync noise.
 
 That schedule is roughly **336 API calls/day**, most of them redundant —
 `daily_bars` returns 240 rows that change once a day and gets refetched ~84

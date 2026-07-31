@@ -1,0 +1,103 @@
+name: 0DTE signal runner
+
+# Two short jobs per session rather than one long one. The midday window
+# 11:30-13:30 ET is a no-trade zone, so idling through it would burn ~2h
+# of billed runner time for nothing, and it keeps each job far under the
+# 6-hour job ceiling.
+#
+# GitHub cron is UTC and does not observe DST, so each session is scheduled
+# twice -- once for EDT (UTC-4) and once for EST (UTC-5) -- and a guard step
+# exits the wrong one immediately. Without that, half the year would start
+# an hour off.
+#
+# Scheduled cron here is best-effort and often fires late. That is fine:
+# the runner keeps its own 5-minute cadence internally, so lag delays
+# startup but never the ticks.
+
+on:
+  schedule:
+    - cron: "35 13 * * 1-5"   # 09:35 ET during EDT  -> morning
+    - cron: "35 14 * * 1-5"   # 09:35 ET during EST  -> morning
+    - cron: "25 17 * * 1-5"   # 13:25 ET during EDT  -> afternoon
+    - cron: "25 18 * * 1-5"   # 13:25 ET during EST  -> afternoon
+  workflow_dispatch:
+    inputs:
+      until:
+        description: "Stop time (ET, HH:MM)"
+        required: false
+        default: "15:30"
+      symbols:
+        description: "Comma-separated symbols"
+        required: false
+        default: "SPY,QQQ"
+
+concurrency:
+  group: odte-runner
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: tools/0dte
+
+jobs:
+  session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      # Decides which leg (if any) this invocation is. The wrong-DST copy
+      # of each schedule lands outside both ET windows and stops here.
+      - name: Resolve session leg
+        id: leg
+        run: |
+          ET=$(TZ=America/New_York date +%H%M)
+          DOW=$(TZ=America/New_York date +%u)
+          echo "ET is $ET (day $DOW)"
+
+          if [ "$DOW" -gt 5 ]; then
+            echo "weekend in ET; nothing to do"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true"  >> "$GITHUB_OUTPUT"
+            echo "until=${{ inputs.until }}" >> "$GITHUB_OUTPUT"
+          elif [ "$ET" -ge 0900 ] && [ "$ET" -lt 1000 ]; then
+            echo "run=true"  >> "$GITHUB_OUTPUT"
+            echo "until=11:30" >> "$GITHUB_OUTPUT"
+          elif [ "$ET" -ge 1300 ] && [ "$ET" -lt 1400 ]; then
+            echo "run=true"  >> "$GITHUB_OUTPUT"
+            echo "until=15:30" >> "$GITHUB_OUTPUT"
+          else
+            echo "outside both entry windows (wrong DST copy); skipping"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run session
+        if: steps.leg.outputs.run == 'true'
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          UW_API_KEY: ${{ secrets.UW_API_KEY }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python -m odte.runner \
+            --symbols "${{ github.event.inputs.symbols || 'SPY,QQQ' }}" \
+            --use-uw \
+            --until "${{ steps.leg.outputs.until }}"
+
+      - name: Daily report
+        # Only after the afternoon leg, so it summarises a finished session.
+        if: steps.leg.outputs.run == 'true' && steps.leg.outputs.until == '15:30'
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: python -m odte.cli report
