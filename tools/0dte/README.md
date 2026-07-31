@@ -190,6 +190,74 @@ part worth logging daily.
 
 ---
 
+## When to run it
+
+Poll on **5-minute bar closes** — the indicators only change when a bar
+closes, so polling faster costs API calls and returns nothing new. Run ~10s
+after each close so the bar has settled.
+
+| Time (ET) | Command | Why |
+|---|---|---|
+| 09:15 | `regime` | One API call. Says whether today is tradeable at all before you're watching charts. |
+| 09:32 | snapshot premarket bars | PMH/PML are fixed at 09:30. Capture once, reuse all day. |
+| 09:40–11:30 /5m | `signal --record` (both symbols) | Entry window 1, ~23 cycles |
+| 13:30–15:00 /5m | `signal --record` (both symbols) | Entry window 2, ~19 cycles |
+| 15:25 | check open positions | Flat by 15:30; the broker force-closes at 15:30 anyway |
+| 16:10 | `report` | Log the day once the close has settled |
+
+Do not run 11:30–13:30 or before 09:40 — the timing gate rejects those
+anyway, so it is pure API burn. Add a market-calendar check before
+scheduling: holidays and half-days (13:00 close) break both the afternoon
+window and the 15:30 flat rule.
+
+That schedule is roughly **336 API calls/day**, most of them redundant —
+`daily_bars` returns 240 rows that change once a day and gets refetched ~84
+times. If that starts to matter, cache per-endpoint with TTLs rather than
+reaching for more database.
+
+## Storage
+
+Turso (hosted libSQL) over the v2 HTTP pipeline. No extra dependency —
+`requests` was already required — and no ORM.
+
+**Market data is deliberately not stored.** Both providers serve history on
+demand: UW's `net-prem-ticks` and `sector-tide` accept `?date=` and return
+full past sessions, and FMP's 5-minute chart reaches back months. Bars and
+flow can always be refetched, so caching them is an optimisation, not a
+preservation problem.
+
+What no API can return is **what this process decided and what happened
+next**. That is what the two tables hold:
+
+- `signals` — every evaluation, including no-trades, with all six gate
+  states and the `blocking_gate` that stopped it. The refusals are the more
+  informative half; they are the only way to answer what the regime gate
+  actually cost you.
+- `trades` — fills, exits, reason, P&L.
+
+Writes are idempotent per `(asof, symbol)`, so a retried cron tick updates
+rather than inflating the sample. Recording never breaks a run: if the
+database is unreachable the signal still prints and a warning goes to
+stderr.
+
+```bash
+python -m odte.cli migrate                       # once
+python -m odte.cli signal --symbol SPY --record --broker-data pm.json
+python -m odte.cli log-entry --symbol SPY --direction 1 --quantity 4 \
+    --premium 2.00 --strike 742 --option-type call --conviction 90
+python -m odte.cli log-exit --trade-id 1 --premium 2.60 --reason target
+python -m odte.cli report
+```
+
+With `--record`, the risk-budget gate reads today's fills from the database
+instead of trusting a flag, so the 3-trade cap and two-loss rule enforce
+themselves.
+
+`report` answers the questions the process cannot otherwise settle: win rate
+by conviction bucket (is conviction worth anything, given it deliberately
+does not size the trade?), by entry window, and a histogram of which gate
+does the refusing.
+
 ## Layout
 
 ```
@@ -199,6 +267,7 @@ odte/indicators.py   EMA, SMA, ATR, VWAP — pure, fully tested
 odte/fmp.py          FMP stable client
 odte/brokers.py      Robinhood MCP payload -> Bar / Quote
 odte/uw.py           Unusual Whales flow confirmation (optional)
+odte/store.py        Turso/libSQL persistence for signals and trades
 odte/regime.py       tech-strength scoring
 odte/levels.py       premarket / opening range / indicator assembly
 odte/signal.py       the six gates and the trade plan
@@ -206,10 +275,12 @@ odte/contract.py     0DTE contract filtering and position sizing
 odte/cli.py          `python -m odte.cli`
 ```
 
-`python -m pytest` — 73 tests covering the indicator maths, regime
+`python -m pytest` — 96 tests covering the indicator maths, regime
 classification (including the narrow-leadership case), every gate's reject
-path, contract filtering, sizing, parsing of a real Robinhood payload, and
-the UW window/cumulative semantics.
+path, contract filtering, sizing, parsing of a real Robinhood payload, the
+UW window/cumulative semantics, EMA warm-up and as-of truncation, and the
+store. Store tests run real SQL against local SQLite rather than mocks,
+since Turso is SQLite and the same statements execute on both.
 
 ## Tuning
 

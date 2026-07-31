@@ -21,6 +21,8 @@ import json
 import sys
 from datetime import date, datetime
 
+import requests
+
 from .brokers import parse_historicals, parse_quotes
 from .config import DEFAULT_CONFIG, MARKET_TZ, StrategyConfig
 from .fmp import FMPClient, FMPError
@@ -28,6 +30,7 @@ from .levels import build_levels
 from .models import Decision, Session, Signal
 from .regime import required_symbols, score_regime
 from .signal import evaluate
+from .store import StoreError, default_store
 from .uw import load_uw_context
 
 GREEN = "\033[32m"
@@ -187,6 +190,78 @@ def render(signal: Signal) -> str:
     return "\n".join(lines)
 
 
+def _require_store():
+    store = default_store()
+    if store is None:
+        raise StoreError("TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be set")
+    return store
+
+
+def _log(args, now: datetime) -> int:
+    store = _require_store()
+    when = _resolve_now(args.at) if args.at else now
+
+    if args.command == "log-entry":
+        store.record_entry(
+            symbol=args.symbol.upper(),
+            session_date=when.date().isoformat(),
+            direction=args.direction,
+            quantity=args.quantity,
+            entry_premium=args.premium,
+            entry_at=when,
+            expiration=args.expiration,
+            strike=args.strike,
+            option_type=args.option_type,
+            conviction=args.conviction,
+            signal_id=store.signal_id(args.symbol.upper(), when),
+        )
+        print(
+            f"recorded entry: {args.quantity}x {args.symbol.upper()} @ {args.premium}"
+        )
+        return 0
+
+    store.close_trade(args.trade_id, args.premium, when, args.reason)
+    print(f"closed trade {args.trade_id} @ {args.premium} ({args.reason})")
+    return 0
+
+
+def _report() -> int:
+    store = _require_store()
+
+    summary = store.performance()
+    if summary and summary[0]["trades"]:
+        row = summary[0]
+        rate = row["wins"] / row["trades"] * 100
+        print(f"\n{BOLD}closed trades{RESET}")
+        print(
+            f"  {row['trades']} trades, {row['wins']} wins ({rate:.0f}%), "
+            f"net ${row['net_pnl']:,.0f}, avg {row['avg_pct']:+.1%}"
+        )
+
+        for title, rows, key in (
+            ("by conviction", store.performance_by_conviction(), "bucket"),
+            ("by window", store.performance_by_window(), "window"),
+        ):
+            print(f"\n{BOLD}{title}{RESET}")
+            for r in rows:
+                win_rate = r["wins"] / r["trades"] * 100 if r["trades"] else 0
+                print(
+                    f"  {r[key]:<14} {r['trades']:>3} trades  "
+                    f"{win_rate:>3.0f}% win  ${r['net_pnl']:>9,.0f}"
+                )
+    else:
+        print(f"\n{DIM}no closed trades yet{RESET}")
+
+    refusals = store.blocking_gate_counts()
+    if refusals:
+        total = sum(r["n"] for r in refusals)
+        print(f"\n{BOLD}why it stood aside{RESET}  ({total} no-trade evaluations)")
+        for r in refusals:
+            print(f"  {r['gate']:<14} {r['n']:>4}  ({r['n'] / total * 100:.0f}%)")
+    print()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="odte", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -206,12 +281,33 @@ def main(argv: list[str] | None = None) -> int:
     sig.add_argument("--symbol", default="SPY")
     sig.add_argument("--broker-data", help="Robinhood historicals JSON (extended)")
     sig.add_argument("--date", help="session date (YYYY-MM-DD), defaults to today")
-    sig.add_argument("--trades-taken", type=int, default=0)
-    sig.add_argument("--losses", type=int, default=0)
+    sig.add_argument("--trades-taken", type=int, default=None)
+    sig.add_argument("--losses", type=int, default=None)
+    sig.add_argument("--record", action="store_true", help="persist the evaluation")
+
+    sub.add_parser("migrate", help="create the database schema")
+    sub.add_parser("report", help="performance and refusal breakdown")
+
+    entry = sub.add_parser("log-entry", help="record a fill")
+    entry.add_argument("--symbol", required=True)
+    entry.add_argument("--direction", type=int, choices=[1, -1], required=True)
+    entry.add_argument("--quantity", type=int, required=True)
+    entry.add_argument("--premium", type=float, required=True)
+    entry.add_argument("--strike", type=float)
+    entry.add_argument("--option-type", choices=["call", "put"])
+    entry.add_argument("--expiration")
+    entry.add_argument("--conviction", type=int)
+    entry.add_argument("--at", help="fill time (ISO, ET); defaults to now")
+
+    exit_p = sub.add_parser("log-exit", help="close a recorded trade")
+    exit_p.add_argument("--trade-id", type=int, required=True)
+    exit_p.add_argument("--premium", type=float, required=True)
+    exit_p.add_argument("--reason", default="manual")
+    exit_p.add_argument("--at", help="exit time (ISO, ET); defaults to now")
 
     args = parser.parse_args(argv)
     config = DEFAULT_CONFIG
-    now = _resolve_now(args.now)
+    now = _resolve_now(getattr(args, "now", None))
 
     try:
         if args.command == "regime":
@@ -232,7 +328,34 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"\n  {BOLD}{regime.regime.value}{RESET}  {regime.detail}\n")
             return 0
 
+        if args.command == "migrate":
+            store = default_store()
+            if store is None:
+                print(f"{RED}database not configured{RESET}", file=sys.stderr)
+                return 2
+            store.migrate()
+            print("schema ready")
+            return 0
+
+        if args.command == "report":
+            return _report()
+
+        if args.command in ("log-entry", "log-exit"):
+            return _log(args, now)
+
         session_day = date.fromisoformat(args.date) if args.date else now.date()
+
+        # The risk-budget gate is only meaningful if it knows what has
+        # already been traded, so it reads the store unless overridden.
+        store = default_store() if args.record else None
+        taken, losses = args.trades_taken, args.losses
+        if store is not None and (taken is None or losses is None):
+            recorded_taken, recorded_losses = store.counts_today(
+                session_day.isoformat()
+            )
+            taken = recorded_taken if taken is None else taken
+            losses = recorded_losses if losses is None else losses
+
         signal = build_signal(
             symbol=args.symbol.upper(),
             now=now,
@@ -240,14 +363,25 @@ def main(argv: list[str] | None = None) -> int:
             broker_payload=_load_broker_payload(args.broker_data),
             config=config,
             use_uw=args.use_uw,
-            trades_taken=args.trades_taken,
-            losses=args.losses,
+            trades_taken=taken or 0,
+            losses=losses or 0,
         )
+
+        if store is not None:
+            try:
+                store.record_signal(signal)
+            except (StoreError, requests.RequestException) as exc:
+                # Persistence must never cost a signal.
+                print(f"{YELLOW}not recorded:{RESET} {exc}", file=sys.stderr)
+
         print(json.dumps(signal.to_dict(), indent=2) if args.json else render(signal))
         return 0
 
     except FMPError as exc:
         print(f"{RED}data error:{RESET} {exc}", file=sys.stderr)
+        return 2
+    except StoreError as exc:
+        print(f"{RED}database error:{RESET} {exc}", file=sys.stderr)
         return 2
     except FileNotFoundError as exc:
         print(f"{RED}missing file:{RESET} {exc}", file=sys.stderr)

@@ -75,6 +75,19 @@ way. When it is on, report the `flow` line alongside the regime — a strong
 sector tide with faded ticker flow is worth saying out loud rather than
 letting it silently inflate conviction.
 
+Add `--record` whenever the Turso credentials are set. It persists the
+evaluation (no-trades included) and makes the risk-budget gate read today's
+actual fills instead of trusting a flag. If the database is unreachable the
+signal still prints — never treat a persistence warning as a failed run.
+
+After a fill, record it so the gate and the report stay honest:
+
+```bash
+python -m odte.cli log-entry --symbol SPY --direction 1 --quantity 4 \
+    --premium 2.00 --strike 742 --option-type call --conviction 90
+python -m odte.cli log-exit --trade-id <id> --premium 2.60 --reason target
+```
+
 Add `--trades-taken N --losses N` if the user has already traded today; the
 risk-budget gate depends on it. Ask if you don't know and it's after 10:00.
 
