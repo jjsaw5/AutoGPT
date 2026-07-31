@@ -13,7 +13,7 @@ bars -- a 1-minute request returns exactly 390 bars per session, 09:30 to
 from __future__ import annotations
 
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import requests
 
@@ -73,13 +73,21 @@ class FMPClient:
         symbol: str,
         interval: str = "5min",
         day: date | None = None,
+        lookback_days: int = 0,
     ) -> list[Bar]:
-        """Regular-hours intraday bars for one session, oldest first."""
+        """Regular-hours intraday bars, oldest first.
+
+        `lookback_days` extends the range backwards to build a continuous
+        multi-session series. The EMAs need this: 21 five-minute bars do
+        not exist until 11:15 ET, so a single session cannot warm them up
+        in time for the morning entry window.
+        """
         day = day or datetime.now(MARKET_TZ).date()
+        start = day - timedelta(days=max(0, lookback_days))
         rows = self._get(
             f"historical-chart/{interval}",
             symbol=symbol,
-            **{"from": day.isoformat(), "to": day.isoformat()},
+            **{"from": start.isoformat(), "to": day.isoformat()},
         )
         bars = [
             Bar(

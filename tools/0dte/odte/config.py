@@ -54,6 +54,12 @@ class TrendConfig:
     daily_sma: int = 200
     intraday_interval: str = "5min"
 
+    # Calendar days of prior intraday history pulled to warm the EMAs. At
+    # the 5-minute interval, 21 bars only exist from 11:15 ET onward, so
+    # without a continuous series the whole morning window is untradeable.
+    # Six calendar days comfortably covers a weekend plus a holiday.
+    intraday_lookback_days: int = 6
+
     # Price must clear the fast EMA by this fraction of the day's ATR before
     # the stack counts as trending. Keeps the engine out of EMA-hugging chop.
     ema_clearance_atr_frac: float = 0.10

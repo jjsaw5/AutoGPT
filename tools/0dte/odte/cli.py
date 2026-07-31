@@ -69,9 +69,13 @@ def build_signal(
     quotes = client.batch_quotes(required_symbols())
     regime = score_regime(quotes, config.regime)
 
-    intraday = client.intraday_bars(
-        symbol, interval=config.trend.intraday_interval, day=session_day
+    history = client.intraday_bars(
+        symbol,
+        interval=config.trend.intraday_interval,
+        day=session_day,
+        lookback_days=config.trend.intraday_lookback_days,
     )
+    intraday = [b for b in history if b.ts.date() == session_day]
     daily = client.daily_bars(symbol, limit=config.trend.daily_sma + 40)
 
     broker_bars = (
@@ -96,6 +100,8 @@ def build_signal(
         day=session_day,
         price=price,
         premarket_bars=premarket_bars or None,
+        history_bars=history,
+        as_of=now,
         trend_config=config.trend,
         level_config=config.levels,
     )
