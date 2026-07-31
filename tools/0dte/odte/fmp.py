@@ -74,20 +74,30 @@ class FMPClient:
         interval: str = "5min",
         day: date | None = None,
         lookback_days: int = 0,
+        extended: bool = False,
     ) -> list[Bar]:
-        """Regular-hours intraday bars, oldest first.
+        """Intraday bars, oldest first.
 
         `lookback_days` extends the range backwards to build a continuous
         multi-session series. The EMAs need this: 21 five-minute bars do
         not exist until 11:15 ET, so a single session cannot warm them up
         in time for the morning entry window.
+
+        `extended` adds pre- and post-market bars. Without it the feed
+        starts at 09:30 (exactly 390 bars/session); with it a session runs
+        04:00-19:59. Premarket high/low is therefore available from FMP
+        alone -- no broker feed required -- which is what allows this to
+        run headless on a schedule.
         """
         day = day or datetime.now(MARKET_TZ).date()
         start = day - timedelta(days=max(0, lookback_days))
+        params = {"from": start.isoformat(), "to": day.isoformat()}
+        if extended:
+            params["extended"] = "true"
         rows = self._get(
             f"historical-chart/{interval}",
             symbol=symbol,
-            **{"from": start.isoformat(), "to": day.isoformat()},
+            **params,
         )
         bars = [
             Bar(
@@ -99,7 +109,7 @@ class FMPClient:
                 low=float(row["low"]),
                 close=float(row["close"]),
                 volume=float(row.get("volume") or 0),
-                session=Session.REGULAR,
+                session=_session_for(row["date"][11:]),
             )
             for row in rows
         ]
@@ -126,3 +136,17 @@ class FMPClient:
 
 def _opt_float(value) -> float | None:
     return None if value is None else float(value)
+
+
+def _session_for(clock: str) -> Session:
+    """Tag a bar by its ET clock time.
+
+    FMP does not label sessions the way the broker feed does, so the
+    boundaries are applied here: 04:00-09:29 pre, 09:30-15:59 regular,
+    16:00-19:59 post.
+    """
+    if clock < "09:30:00":
+        return Session.PRE
+    if clock < "16:00:00":
+        return Session.REGULAR
+    return Session.POST

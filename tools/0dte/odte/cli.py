@@ -4,10 +4,13 @@
     python -m odte.cli signal --symbol SPY --broker-data premarket.json
     python -m odte.cli signal --symbol QQQ --json
 
-`--broker-data` takes the raw JSON payload from
-`mcp__Robinhood__get_equity_historicals` (bounds='extended'). Without it the
-premarket levels are unavailable and every signal correctly refuses to
-trade, because FMP's intraday feed starts at 09:30.
+Premarket levels come from FMP's extended-hours feed (`extended=true`,
+04:00-19:59), so no broker data is required and this runs headless.
+
+`--broker-data` optionally supplies the same bars from
+`mcp__Robinhood__get_equity_historicals` (bounds='extended'). When present
+it wins, being the venue's own record; the two agree to within a cent or
+two, the difference being bar granularity.
 
 `--now` shifts the *timing gate only*. Quotes are always fetched live, so
 replaying an earlier timestamp does not rewind price -- this tool is not a
@@ -77,14 +80,20 @@ def build_signal(
         interval=config.trend.intraday_interval,
         day=session_day,
         lookback_days=config.trend.intraday_lookback_days,
+        extended=True,
     )
     intraday = [b for b in history if b.ts.date() == session_day]
     daily = client.daily_bars(symbol, limit=config.trend.daily_sma + 40)
 
+    # Premarket levels come from FMP's extended feed. A broker payload, if
+    # supplied, wins -- it is the same data from the venue itself.
+    premarket_bars = [b for b in intraday if b.session is Session.PRE]
     broker_bars = (
         parse_historicals(broker_payload).get(symbol, []) if broker_payload else []
     )
-    premarket_bars = [b for b in broker_bars if b.session is Session.PRE]
+    broker_premarket = [b for b in broker_bars if b.session is Session.PRE]
+    if broker_premarket:
+        premarket_bars = broker_premarket
 
     broker_quotes = parse_quotes(broker_payload) if broker_payload else {}
     price = None
